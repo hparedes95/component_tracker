@@ -500,6 +500,95 @@ async function saveAdd() {
   toast(best ? `${product.name}: ${fmtPrice(best.lastPrice, best.currency)} ✓` : 'No se pudo obtener el precio (revisa la URL)');
 }
 
+// ---- Catálogo top ----
+const CATALOG_STORES = ['pccomponentes.com', 'coolmod.com'];
+
+function trackedCatalogIds() {
+  return new Set(state.products.map((p) => p.catalogId).filter(Boolean));
+}
+
+function renderCatalog() {
+  const list = $('catalog-list');
+  const tracked = trackedCatalogIds();
+  list.innerHTML = '';
+  let lastGroup = null;
+  for (const entry of window.CATALOG) {
+    const cat = CATEGORIES.find((c) => c.id === entry.category);
+    const groupName = cat ? `${cat.icon} ${cat.name}` : entry.category;
+    if (groupName !== lastGroup) {
+      lastGroup = groupName;
+      const h = document.createElement('div');
+      h.className = 'catalog-group';
+      h.textContent = groupName;
+      list.appendChild(h);
+    }
+    const isTracked = tracked.has(entry.id);
+    const product = isTracked ? state.products.find((p) => p.catalogId === entry.id) : null;
+    const best = product ? bestSource(product) : null;
+
+    const row = document.createElement('div');
+    row.className = 'catalog-item';
+    row.innerHTML = `
+      <span class="catalog-item-name">${escapeHtml(entry.label)}</span>
+      ${entry.tier ? `<span class="badge badge-tier">${TIER_NAMES[entry.tier]}</span>` : ''}
+      ${best ? `<span class="catalog-price">${fmtPrice(best.lastPrice, best.currency)}</span>` : ''}
+      <button class="btn btn-small ${isTracked ? 'btn-following' : 'btn-primary'}" ${isTracked ? 'disabled' : ''}>
+        ${isTracked ? '✓ Siguiendo' : 'Seguir'}
+      </button>`;
+    if (!isTracked) {
+      row.querySelector('button').onclick = (e) => addFromCatalog(entry, e.target);
+    }
+    list.appendChild(row);
+  }
+}
+
+async function addFromCatalog(entry, btn) {
+  btn.disabled = true;
+  btn.textContent = 'Buscando…';
+  const found = await window.api.discover(entry.query, CATALOG_STORES);
+  if (found.length === 0) {
+    btn.disabled = false;
+    btn.textContent = 'Seguir';
+    toast(`No se encontró "${entry.label}" en las tiendas — puedes añadirlo manualmente con su URL`);
+    return false;
+  }
+  const product = {
+    id: uid(), catalogId: entry.id, name: entry.label,
+    category: entry.category, tier: entry.tier || null,
+    targetPrice: null, alertNotified: false, createdAt: Date.now(),
+    sources: found.map((f) =>
+      ({ id: uid(), url: f.url, store: storeName(f.url), lastPrice: null, currency: null, error: null, history: [] }))
+  };
+  state.products.push(product);
+  await refreshProduct(product);
+  await save();
+  render();
+  renderCatalog();
+  const best = bestSource(product);
+  toast(best
+    ? `${entry.label}: ${fmtPrice(best.lastPrice, best.currency)} ✓`
+    : `${entry.label} añadido, pero sin precio aún — reintenta con ⟳`);
+  return true;
+}
+
+// Pack inicial: añade en un clic lo más top de cada gama
+async function addStarterPack(btn) {
+  const tracked = trackedCatalogIds();
+  const pending = window.CATALOG.filter((e) => e.starter && !tracked.has(e.id));
+  if (pending.length === 0) { toast('La selección top ya está añadida ✓'); return; }
+  btn.disabled = true;
+  const original = btn.textContent;
+  let added = 0;
+  for (let i = 0; i < pending.length; i++) {
+    btn.textContent = `Añadiendo ${i + 1}/${pending.length}…`;
+    const fake = document.createElement('button'); // botón ficticio para reutilizar el flujo
+    if (await addFromCatalog(pending[i], fake)) added++;
+  }
+  btn.disabled = false;
+  btn.textContent = original;
+  toast(`Selección top: ${added}/${pending.length} productos añadidos ✓`);
+}
+
 // ---- Modal detalle ----
 function openDetail(id) {
   detailId = id;
@@ -548,6 +637,13 @@ $('btn-add-empty').onclick = () => openAdd();
 $('btn-cancel-add').onclick = () => $('modal-add').classList.add('hidden');
 $('btn-save-add').onclick = saveAdd;
 $('f-category').onchange = (e) => $('f-tier-wrap').classList.toggle('hidden', e.target.value !== 'fullpc');
+
+const openCatalog = () => { renderCatalog(); $('modal-catalog').classList.remove('hidden'); };
+$('btn-catalog').onclick = openCatalog;
+$('btn-catalog-empty').onclick = openCatalog;
+$('btn-close-catalog').onclick = () => $('modal-catalog').classList.add('hidden');
+$('btn-starter').onclick = (e) => addStarterPack(e.target);
+$('btn-starter-cat').onclick = (e) => addStarterPack(e.target);
 
 $('btn-refresh').onclick = () => refreshAll(false);
 $('search').oninput = (e) => { searchTerm = e.target.value.toLowerCase(); renderGrid(); };

@@ -66,4 +66,37 @@ t('sin precio devuelve null', () => {
   assert.strictEqual(extractPrice('<html><body>Página sin producto</body></html>'), null);
 });
 
+// ---- Tests del descubridor de URLs ----
+const { parseDdgResults, parseStoreSearch, decodeDdgHref } = require('../src/discover');
+
+t('decodeDdgHref extrae la URL del redirect de DuckDuckGo', () => {
+  assert.strictEqual(
+    decodeDdgHref('//duckduckgo.com/l/?uddg=https%3A%2F%2Fwww.pccomponentes.com%2Fmsi-rtx-5070&rut=abc'),
+    'https://www.pccomponentes.com/msi-rtx-5070'
+  );
+  assert.strictEqual(decodeDdgHref('https://www.coolmod.com/producto-x'), 'https://www.coolmod.com/producto-x');
+  assert.strictEqual(decodeDdgHref('/relativo'), null);
+});
+
+t('parseDdgResults filtra por dominio y descarta búsquedas/categorías', () => {
+  const html = `
+    <a class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fwww.pccomponentes.com%2Fbuscar%2F%3Fquery%3Drtx">busq</a>
+    <a class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fwww.otratienda.com%2Frtx-5070">otra</a>
+    <a class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fwww.pccomponentes.com%2Fmsi-geforce-rtx-5070-ventus">ficha</a>`;
+  assert.deepStrictEqual(parseDdgResults(html, 'pccomponentes.com'),
+    ['https://www.pccomponentes.com/msi-geforce-rtx-5070-ventus']);
+});
+
+t('parseStoreSearch puntúa enlaces por coincidencia con el producto', () => {
+  const html = `
+    <a href="/legal/condiciones">condiciones</a>
+    <a href="/amd-ryzen-7-9800x3d-47ghz">Ryzen 7 9800X3D</a>
+    <a href="/intel-core-ultra-5-245k">otro</a>`;
+  assert.strictEqual(
+    parseStoreSearch(html, 'pccomponentes.com', 'AMD Ryzen 7 9800X3D'),
+    'https://www.pccomponentes.com/amd-ryzen-7-9800x3d-47ghz'
+  );
+  assert.strictEqual(parseStoreSearch('<a href="/legal/aviso-cosas">x</a>', 'pccomponentes.com', 'RTX 5090'), null);
+});
+
 console.log(`\n${passed} tests OK`);

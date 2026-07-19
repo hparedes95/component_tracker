@@ -2,6 +2,7 @@ const { app, BrowserWindow, ipcMain, Notification, shell } = require('electron')
 const path = require('path');
 const fs = require('fs');
 const { fetchPrice } = require('./src/pricefetcher');
+const { discoverProductUrl } = require('./src/discover');
 
 const DATA_FILE = () => path.join(app.getPath('userData'), 'data.json');
 const REFRESH_INTERVAL_MS = 24 * 60 * 60 * 1000; // cada 24 horas
@@ -54,6 +55,18 @@ ipcMain.handle('price:fetch', async (_e, url) => {
   } catch (err) {
     return { ok: false, error: err.message };
   }
+});
+
+// Localiza automáticamente la URL del producto en cada tienda del catálogo
+ipcMain.handle('discover', async (_e, { query, domains }) => {
+  const results = [];
+  for (const domain of domains) {
+    try {
+      const url = await discoverProductUrl(query, domain);
+      if (url) results.push({ domain, url });
+    } catch { /* tienda sin resultado, se continúa */ }
+  }
+  return results;
 });
 
 // ---- Notificaciones de alerta de precio ----

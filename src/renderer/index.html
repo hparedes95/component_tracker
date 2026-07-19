@@ -17,6 +17,7 @@
         </div>
       </div>
       <nav id="category-nav" class="cat-nav"></nav>
+      <button id="btn-catalog" class="btn btn-catalog">🧭 Explorar catálogo top</button>
       <div class="sidebar-footer">
         <div id="last-update" class="last-update">Sin actualizar</div>
       </div>
@@ -52,9 +53,30 @@
           en tu tienda favorita (PcComponentes, Coolmod, Neobyte, Amazon, Newegg...).<br />
           La app detecta el precio automáticamente y lo actualiza cada día.
         </p>
-        <button id="btn-add-empty" class="btn btn-primary">+ Añadir mi primer producto</button>
+        <div class="empty-actions">
+          <button id="btn-starter" class="btn btn-primary">⭐ Añadir selección top (automático)</button>
+          <button id="btn-catalog-empty" class="btn btn-ghost">🧭 Explorar catálogo</button>
+          <button id="btn-add-empty" class="btn btn-ghost">+ Añadir manualmente</button>
+        </div>
       </div>
     </main>
+  </div>
+
+  <!-- Modal: catálogo top -->
+  <div id="modal-catalog" class="modal-overlay hidden">
+    <div class="modal modal-wide">
+      <div class="catalog-head">
+        <div>
+          <h2>🧭 Catálogo: lo más top de cada gama</h2>
+          <p class="catalog-sub">Pulsa "Seguir" y la app localiza el producto en las tiendas y rastrea su precio automáticamente.</p>
+        </div>
+        <button id="btn-starter-cat" class="btn btn-primary">⭐ Añadir selección top</button>
+      </div>
+      <div id="catalog-list" class="catalog-list"></div>
+      <div class="modal-actions">
+        <button id="btn-close-catalog" class="btn btn-ghost">Cerrar</button>
+      </div>
+    </div>
   </div>
 
   <!-- Modal: añadir producto -->
@@ -122,6 +144,7 @@
 
   <div id="toast" class="toast hidden"></div>
 
+  <script src="catalog.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
