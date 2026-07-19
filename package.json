@@ -1,0 +1,49 @@
+{
+  "name": "pc-price-tracker",
+  "productName": "PC Price Tracker",
+  "version": "1.0.0",
+  "description": "Rastrea precios de componentes de PC y PCs gaming completas en tiempo real",
+  "main": "main.js",
+  "author": "hparedes95",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "test": "node test/parser.test.js",
+    "dist": "electron-builder"
+  },
+  "devDependencies": {
+    "electron": "^31.3.0",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.hparedes95.pcpricetracker",
+    "productName": "PC Price Tracker",
+    "files": [
+      "main.js",
+      "preload.js",
+      "src/**/*",
+      "build/icon.png"
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "deleteAppDataOnUninstall": false
+    },
+    "linux": {
+      "target": ["AppImage", "deb"],
+      "icon": "build/icon.png",
+      "category": "Utility"
+    },
+    "mac": {
+      "target": "dmg",
+      "icon": "build/icon.png"
+    }
+  }
+}

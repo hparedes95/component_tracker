@@ -1,0 +1,69 @@
+// Tests del extractor de precios: node test/parser.test.js
+const assert = require('assert');
+const { extractPrice, parseNumber } = require('../src/pricefetcher');
+
+let passed = 0;
+function t(name, fn) {
+  fn();
+  passed++;
+  console.log('✓', name);
+}
+
+t('parseNumber formato europeo', () => {
+  assert.strictEqual(parseNumber('1.299,99'), 1299.99);
+  assert.strictEqual(parseNumber('1.299,99 €'), 1299.99);
+});
+
+t('parseNumber formato anglosajón', () => {
+  assert.strictEqual(parseNumber('1,299.99'), 1299.99);
+  assert.strictEqual(parseNumber('$1,299.99'), 1299.99);
+});
+
+t('parseNumber simple y número', () => {
+  assert.strictEqual(parseNumber('599.95'), 599.95);
+  assert.strictEqual(parseNumber(649), 649);
+  assert.strictEqual(parseNumber(''), null);
+  assert.strictEqual(parseNumber('gratis'), null);
+});
+
+t('JSON-LD Product con offers', () => {
+  const html = `<html><script type="application/ld+json">
+    {"@type":"Product","name":"RTX 4070","offers":{"@type":"Offer","price":"629.90","priceCurrency":"EUR"}}
+  </script></html>`;
+  assert.deepStrictEqual(extractPrice(html), { price: 629.9, currency: 'EUR' });
+});
+
+t('JSON-LD array con @graph y AggregateOffer', () => {
+  const html = `<script type="application/ld+json">
+    {"@graph":[{"@type":"Product","offers":{"@type":"AggregateOffer","lowPrice":1149.5,"priceCurrency":"EUR"}}]}
+  </script>`;
+  assert.deepStrictEqual(extractPrice(html), { price: 1149.5, currency: 'EUR' });
+});
+
+t('JSON-LD inválido no rompe y cae a meta tags', () => {
+  const html = `<script type="application/ld+json">{esto no es json}</script>
+    <meta property="product:price:amount" content="349,95">
+    <meta property="product:price:currency" content="EUR">`;
+  assert.deepStrictEqual(extractPrice(html), { price: 349.95, currency: 'EUR' });
+});
+
+t('meta tags og:price', () => {
+  const html = `<meta property="og:price:amount" content="89.99">`;
+  assert.deepStrictEqual(extractPrice(html), { price: 89.99, currency: null });
+});
+
+t('microdatos itemprop', () => {
+  const html = `<span itemprop="price" content="459.00">459,00 €</span>`;
+  assert.deepStrictEqual(extractPrice(html), { price: 459, currency: null });
+});
+
+t('patrón JSON embebido', () => {
+  const html = `<script>window.__DATA__ = {"product":{"price":"1899.99","stock":true}}</script>`;
+  assert.deepStrictEqual(extractPrice(html), { price: 1899.99, currency: null });
+});
+
+t('sin precio devuelve null', () => {
+  assert.strictEqual(extractPrice('<html><body>Página sin producto</body></html>'), null);
+});
+
+console.log(`\n${passed} tests OK`);

@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>PC Price Tracker</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="layout">
+    <!-- Barra lateral -->
+    <aside class="sidebar">
+      <div class="logo">
+        <div class="logo-icon">⚡</div>
+        <div>
+          <div class="logo-title">PC Price Tracker</div>
+          <div class="logo-sub">Precios en tiempo real</div>
+        </div>
+      </div>
+      <nav id="category-nav" class="cat-nav"></nav>
+      <div class="sidebar-footer">
+        <div id="last-update" class="last-update">Sin actualizar</div>
+      </div>
+    </aside>
+
+    <!-- Contenido principal -->
+    <main class="main">
+      <header class="topbar">
+        <input id="search" class="search" type="search" placeholder="Buscar producto..." />
+        <div class="stats">
+          <div class="stat"><span id="stat-count">0</span> productos</div>
+          <div class="stat stat-down"><span id="stat-drops">0</span> bajadas</div>
+          <div class="stat stat-up"><span id="stat-rises">0</span> subidas</div>
+        </div>
+        <button id="btn-refresh" class="btn btn-ghost" title="Actualizar todos los precios ahora">
+          <span class="refresh-icon">⟳</span> Actualizar
+        </button>
+        <button id="btn-add" class="btn btn-primary">+ Añadir producto</button>
+      </header>
+
+      <div id="refresh-bar" class="refresh-bar hidden">
+        <div class="refresh-bar-fill" id="refresh-bar-fill"></div>
+        <span id="refresh-bar-text"></span>
+      </div>
+
+      <section id="grid" class="grid"></section>
+
+      <div id="empty-state" class="empty-state hidden">
+        <div class="empty-icon">🖥️</div>
+        <h2>Aún no hay productos</h2>
+        <p>
+          Añade cualquier componente o PC gaming completa pegando la URL del producto
+          en tu tienda favorita (PcComponentes, Coolmod, Neobyte, Amazon, Newegg...).<br />
+          La app detecta el precio automáticamente y lo actualiza cada día.
+        </p>
+        <button id="btn-add-empty" class="btn btn-primary">+ Añadir mi primer producto</button>
+      </div>
+    </main>
+  </div>
+
+  <!-- Modal: añadir producto -->
+  <div id="modal-add" class="modal-overlay hidden">
+    <div class="modal">
+      <h2 id="modal-add-title">Añadir producto</h2>
+      <label>Nombre
+        <input id="f-name" type="text" placeholder="Ej: RTX 4070 Super / PC Gaming Ryzen 7" />
+      </label>
+      <div class="row">
+        <label>Categoría
+          <select id="f-category"></select>
+        </label>
+        <label id="f-tier-wrap" class="hidden">Nivel
+          <select id="f-tier">
+            <option value="entrada">Gama de entrada</option>
+            <option value="media">Gama media</option>
+            <option value="alta">Gama alta</option>
+            <option value="entusiasta">Entusiasta</option>
+          </select>
+        </label>
+        <label>Precio objetivo (€)
+          <input id="f-target" type="number" min="0" step="0.01" placeholder="Opcional" />
+        </label>
+      </div>
+      <label>URLs del producto (una por línea, puedes poner varias tiendas para comparar)
+        <textarea id="f-urls" rows="4" placeholder="https://www.pccomponentes.com/...&#10;https://www.coolmod.com/..."></textarea>
+      </label>
+      <div id="modal-add-error" class="form-error hidden"></div>
+      <div class="modal-actions">
+        <button id="btn-cancel-add" class="btn btn-ghost">Cancelar</button>
+        <button id="btn-save-add" class="btn btn-primary">Guardar y obtener precio</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: detalle de producto -->
+  <div id="modal-detail" class="modal-overlay hidden">
+    <div class="modal modal-wide">
+      <div class="detail-header">
+        <div>
+          <h2 id="d-name"></h2>
+          <div id="d-badges"></div>
+        </div>
+        <div class="detail-price">
+          <div id="d-price" class="d-price"></div>
+          <div id="d-change" class="d-change"></div>
+        </div>
+      </div>
+      <div class="chart-wrap">
+        <canvas id="d-chart" width="820" height="260"></canvas>
+        <div id="d-tooltip" class="chart-tooltip hidden"></div>
+      </div>
+      <h3 class="d-sources-title">Tiendas</h3>
+      <div id="d-sources" class="d-sources"></div>
+      <div class="modal-actions space-between">
+        <button id="btn-delete" class="btn btn-danger">Eliminar producto</button>
+        <div>
+          <button id="btn-edit" class="btn btn-ghost">Editar</button>
+          <button id="btn-close-detail" class="btn btn-primary">Cerrar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
