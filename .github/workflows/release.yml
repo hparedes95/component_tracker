@@ -43,6 +43,14 @@ jobs:
       - run: npx electron-builder --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      # En ejecuciones manuales (workflow_dispatch) los instaladores quedan
+      # como artefactos descargables en la página del run
+      - name: Subir instaladores como artefacto
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: instaladores-${{ matrix.os }}
+          path: ${{ matrix.artifact }}
       - name: Publicar en la Release
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
