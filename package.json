@@ -4,7 +4,10 @@
   "version": "1.0.0",
   "description": "Rastrea precios de componentes de PC y PCs gaming completas en tiempo real",
   "main": "main.js",
-  "author": "hparedes95",
+  "author": {
+    "name": "hparedes95",
+    "email": "282342444+hparedes95@users.noreply.github.com"
+  },
   "license": "MIT",
   "scripts": {
     "start": "electron .",
