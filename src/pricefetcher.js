@@ -24,7 +24,20 @@ async function fetchPrice(url) {
   const html = await res.text();
   const result = extractPrice(html);
   if (!result) throw new Error('No se encontró precio en la página');
-  return result;
+  return { ...result, image: extractImage(html) };
+}
+
+// Extrae la imagen principal del producto (og:image / twitter:image / JSON-LD).
+function extractImage(html) {
+  const og = metaContent(html, ['og:image', 'og:image:secure_url', 'twitter:image', 'twitter:image:src']);
+  if (og && /^https?:\/\//.test(og)) return og;
+  const m = /"image"\s*:\s*(?:"([^"]+)"|\[\s*"([^"]+)")/i.exec(html);
+  let u = m && (m[1] || m[2]);
+  if (u) {
+    u = u.replace(/\\\//g, '/');
+    if (/^https?:\/\//.test(u)) return u;
+  }
+  return null;
 }
 
 function extractPrice(html) {
@@ -174,4 +187,4 @@ function parseNumber(value) {
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 
-module.exports = { fetchPrice, extractPrice, extractPriceFromText, parseNumber };
+module.exports = { fetchPrice, extractPrice, extractPriceFromText, extractImage, parseNumber };

@@ -1,6 +1,6 @@
 // Tests del extractor de precios: node test/parser.test.js
 const assert = require('assert');
-const { extractPrice, extractPriceFromText, parseNumber } = require('../src/pricefetcher');
+const { extractPrice, extractPriceFromText, extractImage, parseNumber } = require('../src/pricefetcher');
 
 let passed = 0;
 function t(name, fn) {
@@ -70,6 +70,12 @@ t('precio de Amazon desde a-offscreen (caja de compra)', () => {
 
 t('sin precio devuelve null', () => {
   assert.strictEqual(extractPrice('<html><body>Página sin producto</body></html>'), null);
+});
+
+t('extractImage saca la imagen de og:image o de JSON-LD', () => {
+  assert.strictEqual(extractImage('<meta property="og:image" content="https://x.com/a.jpg">'), 'https://x.com/a.jpg');
+  assert.strictEqual(extractImage('<script type="application/ld+json">{"image":"https:\\/\\/y.com\\/b.png"}</script>'), 'https://y.com/b.png');
+  assert.strictEqual(extractImage('<html>sin imagen</html>'), null);
 });
 
 t('extractPriceFromText detecta el precio en euros del texto renderizado', () => {

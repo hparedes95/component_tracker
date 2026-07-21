@@ -7,6 +7,8 @@ Aplicación de escritorio para **rastrear precios de componentes de PC y PCs gam
 ## ✨ Características
 
 - **Catálogo top integrado**: ~45 productos destacados (RTX 5090/5080/5070, Ryzen 9800X3D, SSDs, RAM...) y PCs gaming por gama, listos para seguir con un clic — la app localiza sola el producto en las tiendas, sin pegar enlaces. Incluye un botón "⭐ Añadir selección top" que puebla la app automáticamente.
+- **Imágenes de producto automáticas**: cada tarjeta muestra la foto del producto, extraída de la propia web (og:image / datos estructurados), para identificarlo de un vistazo.
+- **Diseño moderno y tecnológico**: interfaz oscura cuidada, tarjetas con imagen, navegación cómoda y fluida.
 - **Rastrea cualquier componente**: procesadores, gráficas, RAM, placas base, almacenamiento, fuentes, cajas, refrigeración, monitores y periféricos.
 - **PCs gaming completas** por niveles: gama de entrada, media, alta y entusiasta.
 - **Compara varias tiendas** para el mismo producto: añade varias URLs y la app te muestra siempre el mejor precio.

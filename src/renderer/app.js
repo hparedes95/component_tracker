@@ -87,6 +87,12 @@ const keepaPageUrl = (asin, domain) => `https://keepa.com/#!product/${domain}-${
 const storeSearchUrl = (domain, q) =>
   (STORE_SEARCH_URL[domain] ? STORE_SEARCH_URL[domain](q) : `https://www.${domain}/`);
 
+// Imagen del producto: la primera disponible entre sus tiendas
+function productImage(p) {
+  for (const s of p.sources) if (s.image) return s.image;
+  return null;
+}
+
 // Mejor precio actual entre todas las tiendas del producto
 function bestSource(p) {
   let best = null;
@@ -227,29 +233,35 @@ function renderGrid() {
     const cat = CATEGORIES.find((c) => c.id === p.category);
     const hitTarget = p.targetPrice && best && best.lastPrice <= p.targetPrice;
 
+    const img = productImage(p);
     const card = document.createElement('div');
     card.className = 'card';
     card.innerHTML = `
-      <div class="card-top">
-        <div class="card-name">${escapeHtml(p.name)}</div>
+      <div class="card-media">
+        ${img
+          ? `<img class="card-img" loading="lazy" src="${escapeHtml(img)}" alt="" referrerpolicy="no-referrer" onerror="this.remove()" />`
+          : `<div class="card-media-ph">${cat ? cat.icon : '🖥️'}</div>`}
         <button class="card-refresh" title="Actualizar este producto">⟳</button>
       </div>
-      <div class="badges">
-        <span class="badge">${cat ? cat.icon + ' ' + cat.name : p.category}</span>
-        ${p.tier ? `<span class="badge badge-tier">${TIER_NAMES[p.tier] || p.tier}</span>` : ''}
-        ${p.targetPrice ? `<span class="badge ${hitTarget ? 'badge-alert-hit' : 'badge-alert'}">🎯 ${fmtPrice(p.targetPrice, best && best.currency)}</span>` : ''}
-      </div>
-      <div class="card-price-row">
-        ${best
-          ? `<span class="card-price">${fmtPrice(best.lastPrice, best.currency)}</span>${changeBadge(pct)}`
-          : '<span class="card-price no-price">Sin precio todavía — pulsa ⟳</span>'}
-      </div>
-      <canvas class="sparkline" width="300" height="42"></canvas>
-      <div class="card-sources">
-        ${p.sources.map((s) => s.error
-          ? `<span class="source-chip error">${escapeHtml(s.store)} ✕</span>`
-          : `<span class="source-chip">${escapeHtml(s.store)} <b>${fmtPrice(s.lastPrice, s.currency)}</b></span>`
-        ).join('')}
+      <div class="card-body">
+        <div class="card-name">${escapeHtml(p.name)}</div>
+        <div class="badges">
+          <span class="badge">${cat ? cat.icon + ' ' + cat.name : p.category}</span>
+          ${p.tier ? `<span class="badge badge-tier">${TIER_NAMES[p.tier] || p.tier}</span>` : ''}
+          ${p.targetPrice ? `<span class="badge ${hitTarget ? 'badge-alert-hit' : 'badge-alert'}">🎯 ${fmtPrice(p.targetPrice, best && best.currency)}</span>` : ''}
+        </div>
+        <div class="card-price-row">
+          ${best
+            ? `<span class="card-price">${fmtPrice(best.lastPrice, best.currency)}</span>${changeBadge(pct)}`
+            : '<span class="card-price no-price">Sin precio todavía — pulsa ⟳</span>'}
+        </div>
+        <canvas class="sparkline" width="300" height="42"></canvas>
+        <div class="card-sources">
+          ${p.sources.map((s) => s.error
+            ? `<span class="source-chip error">${escapeHtml(s.store)} ✕</span>`
+            : `<span class="source-chip">${escapeHtml(s.store)} <b>${fmtPrice(s.lastPrice, s.currency)}</b></span>`
+          ).join('')}
+        </div>
       </div>`;
 
     card.onclick = () => openDetail(p.id);
@@ -468,6 +480,7 @@ async function refreshProduct(p) {
     if (res.ok) {
       s.lastPrice = res.price;
       s.currency = res.currency || s.currency || 'EUR';
+      if (res.image) s.image = res.image;
       s.error = null;
       s.history = s.history || [];
       const today = dayKey(Date.now());
@@ -703,6 +716,10 @@ function openDetail(id) {
   const pct = priceChange(p);
   const cat = CATEGORIES.find((c) => c.id === p.category);
 
+  const dImg = $('d-image'), pImg = productImage(p);
+  if (pImg) { dImg.src = pImg; dImg.onerror = () => dImg.classList.add('hidden'); dImg.classList.remove('hidden'); }
+  else dImg.classList.add('hidden');
+
   $('d-name').textContent = p.name;
   $('d-badges').innerHTML = `
     <div class="badges">
@@ -874,7 +891,12 @@ $('btn-starter').onclick = (e) => addStarterPack(e.target);
 $('btn-starter-cat').onclick = (e) => addStarterPack(e.target);
 
 $('btn-refresh').onclick = () => refreshAll(false);
-$('search').oninput = (e) => { searchTerm = e.target.value.toLowerCase(); renderGrid(); };
+let searchTimer = null;
+$('search').oninput = (e) => {
+  searchTerm = e.target.value.toLowerCase();
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(renderGrid, 140);
+};
 $('sort').onchange = (e) => { sortBy = e.target.value; renderGrid(); };
 document.querySelectorAll('#fb-chips .fb-chip').forEach((chip) => {
   chip.onclick = () => {
