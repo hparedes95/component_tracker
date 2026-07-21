@@ -84,13 +84,17 @@ const keepaImgUrl = (asin, domain, days) =>
   `https://graph.keepa.com/pricehistory.png?asin=${asin}&domain=${domain}` +
   `&width=820&height=280&range=${days}&amazon=1&new=1&used=0&salesrank=0`;
 const keepaPageUrl = (asin, domain) => `https://keepa.com/#!product/${domain}-${asin}`;
+// Imagen del producto directamente desde Amazon por ASIN (sin cargar la página)
+const amazonImageUrl = (asin) => `https://images-na.ssl-images-amazon.com/images/P/${asin}.01._SCLZZZZZZZ_.jpg`;
 const storeSearchUrl = (domain, q) =>
   (STORE_SEARCH_URL[domain] ? STORE_SEARCH_URL[domain](q) : `https://www.${domain}/`);
 
-// Imagen del producto: la primera disponible entre sus tiendas
+// Imagen del producto: la foto real extraída de la web (og:image) y, si aún no
+// hay ninguna, la imagen de Amazon por ASIN como respaldo inmediato.
 function productImage(p) {
   for (const s of p.sources) if (s.image) return s.image;
-  return null;
+  const info = amazonInfo(p);
+  return info ? amazonImageUrl(info.asin) : null;
 }
 
 // Mejor precio actual entre todas las tiendas del producto
@@ -238,9 +242,8 @@ function renderGrid() {
     card.className = 'card';
     card.innerHTML = `
       <div class="card-media">
-        ${img
-          ? `<img class="card-img" loading="lazy" src="${escapeHtml(img)}" alt="" referrerpolicy="no-referrer" onerror="this.remove()" />`
-          : `<div class="card-media-ph">${cat ? cat.icon : '🖥️'}</div>`}
+        <div class="card-media-ph">${cat ? cat.icon : '🖥️'}</div>
+        ${img ? `<img class="card-img" loading="lazy" src="${escapeHtml(img)}" alt="" referrerpolicy="no-referrer" onerror="this.remove()" />` : ''}
         <button class="card-refresh" title="Actualizar este producto">⟳</button>
       </div>
       <div class="card-body">

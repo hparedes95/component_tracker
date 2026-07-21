@@ -6,9 +6,9 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Etiqueta/versión del release (ej: v1.6.0)'
+        description: 'Etiqueta/versión del release (ej: v1.7.0)'
         required: true
-        default: 'v1.6.0'
+        default: 'v1.7.0'
 
 permissions:
   contents: write
