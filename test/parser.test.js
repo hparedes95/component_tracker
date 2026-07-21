@@ -62,6 +62,12 @@ t('patrón JSON embebido', () => {
   assert.deepStrictEqual(extractPrice(html), { price: 1899.99, currency: null });
 });
 
+t('precio de Amazon desde a-offscreen (caja de compra)', () => {
+  const html = `<div id="corePrice"><span class="a-price"><span class="a-offscreen">629,90 €</span></span></div>
+    <span class="a-offscreen">999,00 €</span>`;
+  assert.deepStrictEqual(extractPrice(html), { price: 629.9, currency: null });
+});
+
 t('sin precio devuelve null', () => {
   assert.strictEqual(extractPrice('<html><body>Página sin producto</body></html>'), null);
 });
@@ -78,7 +84,20 @@ t('extractPriceFromText elige el valor más repetido (precio del producto)', () 
 });
 
 // ---- Tests del descubridor de URLs ----
-const { parseDdgResults, parseStoreSearch, parseBingResults, decodeDdgHref } = require('../src/discover');
+const { parseDdgResults, parseStoreSearch, parseBingResults, decodeDdgHref, extractAsin, parseAmazonSearch } = require('../src/discover');
+
+t('extractAsin obtiene el ASIN de varias formas de URL de Amazon', () => {
+  assert.strictEqual(extractAsin('https://www.amazon.es/dp/B0CGXXXX99'), 'B0CGXXXX99');
+  assert.strictEqual(extractAsin('https://www.amazon.es/algun-nombre/dp/B0CGYYYY88/ref=sr_1_1'), 'B0CGYYYY88');
+  assert.strictEqual(extractAsin('https://www.amazon.es/gp/product/B012345678?th=1'), 'B012345678');
+  assert.strictEqual(extractAsin('https://www.pccomponentes.com/algo'), null);
+});
+
+t('parseAmazonSearch devuelve la primera ficha /dp/ASIN', () => {
+  const html = `<div><a href="/sspa/click?url=/dp/B0PROMO001">anuncio</a>
+    <a href="/msi-rtx/dp/B0REAL1234/ref=x">producto</a></div>`;
+  assert.strictEqual(parseAmazonSearch(html, 'www.amazon.es'), 'https://www.amazon.es/dp/B0PROMO001');
+});
 
 t('parseBingResults filtra por dominio y descarta rutas de búsqueda', () => {
   const html = `

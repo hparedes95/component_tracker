@@ -54,8 +54,34 @@ const domainOf = (u) => {
 // ha localizado la ficha exacta del producto; permite "Abrir en tienda").
 const STORE_SEARCH_URL = {
   'pccomponentes.com': (q) => `https://www.pccomponentes.com/buscar/?query=${encodeURIComponent(q)}`,
-  'coolmod.com': (q) => `https://www.coolmod.com/busqueda?q=${encodeURIComponent(q)}`
+  'amazon.es': (q) => `https://www.amazon.es/s?k=${encodeURIComponent(q)}`
 };
+
+// ---- Amazon / Keepa: histórico de precios a largo plazo ----
+const AMAZON_KEEPA_DOMAIN = {
+  'amazon.com': 1, 'amazon.co.uk': 2, 'amazon.de': 3, 'amazon.fr': 4, 'amazon.co.jp': 5,
+  'amazon.ca': 6, 'amazon.it': 8, 'amazon.es': 9, 'amazon.in': 10, 'amazon.com.mx': 11,
+  'amazon.nl': 12, 'amazon.com.br': 13, 'amazon.se': 17
+};
+const extractAsin = (url) => {
+  const m = /(?:\/dp\/|\/gp\/product\/|\/gp\/aw\/d\/|\/product\/|[?&]asin=)([A-Z0-9]{10})(?:[/?]|$)/i.exec(url || '');
+  return m ? m[1].toUpperCase() : null;
+};
+// Devuelve {asin, domain} del primer origen de Amazon del producto, o null
+const amazonInfo = (p) => {
+  for (const s of p.sources) {
+    const host = domainOf(s.url);
+    if (host && host.startsWith('amazon')) {
+      const asin = extractAsin(s.url);
+      if (asin) return { asin, domain: AMAZON_KEEPA_DOMAIN[host] || 9 };
+    }
+  }
+  return null;
+};
+const keepaImgUrl = (asin, domain, days) =>
+  `https://graph.keepa.com/pricehistory.png?asin=${asin}&domain=${domain}` +
+  `&width=820&height=280&range=${days}&amazon=1&new=1&used=0&salesrank=0`;
+const keepaPageUrl = (asin, domain) => `https://keepa.com/#!product/${domain}-${asin}`;
 const storeSearchUrl = (domain, q) =>
   (STORE_SEARCH_URL[domain] ? STORE_SEARCH_URL[domain](q) : `https://www.${domain}/`);
 
@@ -527,7 +553,7 @@ async function saveAdd() {
 }
 
 // ---- Catálogo top ----
-const CATALOG_STORES = ['pccomponentes.com', 'coolmod.com'];
+const CATALOG_STORES = ['pccomponentes.com', 'amazon.es'];
 
 function trackedCatalogIds() {
   return new Set(state.products.map((p) => p.catalogId).filter(Boolean));
@@ -650,12 +676,101 @@ function openDetail(id) {
     a.onclick = () => window.api.openExternal(a.dataset.url);
   });
 
-  const hist = bestHistory(p);
-  const canvas = $('d-chart');
-  const geom = drawDetailChart(canvas, hist, best && best.currency);
-  attachChartHover(canvas, hist, best && best.currency, geom);
+  detailRangeDays = null;   // por defecto: todo el historial registrado
+  keepaRangeDays = 1825;    // por defecto: 5 años en el histórico de Keepa
+  renderDetailCharts(p);
 
   $('modal-detail').classList.remove('hidden');
+}
+
+// Rangos de tiempo seleccionables
+const APP_RANGES = [
+  { label: '90 días', days: 90 },
+  { label: '1 año', days: 365 },
+  { label: 'Todo', days: null }
+];
+const KEEPA_RANGES = [
+  { label: '1 año', days: 365 },
+  { label: '3 años', days: 1095 },
+  { label: '5 años', days: 1825 },
+  { label: 'Máx', days: 3650 }
+];
+let detailRangeDays = null;
+let keepaRangeDays = 1825;
+
+function historyWithin(hist, days) {
+  if (!days) return hist;
+  const cutoff = Date.now() - days * 86400000;
+  return hist.filter((h) => h.t >= cutoff);
+}
+
+function computeStats(hist) {
+  if (!hist.length) return null;
+  const prices = hist.map((h) => h.price);
+  const min = Math.min(...prices), max = Math.max(...prices);
+  const avg = prices.reduce((a, b) => a + b, 0) / prices.length;
+  return { min, max, avg, cur: prices[prices.length - 1] };
+}
+
+// Pinta las estadísticas, la gráfica del historial propio (con su rango) y,
+// para productos de Amazon, el histórico de años atrás de Keepa.
+function renderDetailCharts(p) {
+  const best = bestSource(p);
+  const currency = best && best.currency;
+  const full = bestHistory(p);
+
+  // Estadísticas sobre todo el historial registrado
+  const stats = computeStats(full);
+  const statsEl = $('d-stats');
+  if (stats) {
+    const vsMin = stats.min > 0 ? ((stats.cur - stats.min) / stats.min) * 100 : 0;
+    statsEl.innerHTML = `
+      <div class="stat-cell"><span>Actual</span><b>${fmtPrice(stats.cur, currency)}</b></div>
+      <div class="stat-cell"><span>Mínimo</span><b class="good">${fmtPrice(stats.min, currency)}</b></div>
+      <div class="stat-cell"><span>Máximo</span><b class="bad">${fmtPrice(stats.max, currency)}</b></div>
+      <div class="stat-cell"><span>Media</span><b>${fmtPrice(stats.avg, currency)}</b></div>
+      <div class="stat-cell"><span>vs mínimo</span><b class="${vsMin <= 0.5 ? 'good' : ''}">${vsMin <= 0.5 ? 'en mínimo 🔥' : '+' + vsMin.toFixed(1) + '%'}</b></div>`;
+  } else {
+    statsEl.innerHTML = '<div class="stat-cell"><span>Historial</span><b>registrando…</b></div>';
+  }
+
+  // Botones de rango del historial propio
+  const rangeEl = $('d-range');
+  rangeEl.innerHTML = APP_RANGES.map((r) =>
+    `<button class="range-btn ${(r.days || null) === detailRangeDays ? 'active' : ''}" data-days="${r.days == null ? '' : r.days}">${r.label}</button>`
+  ).join('');
+  rangeEl.querySelectorAll('.range-btn').forEach((b) => {
+    b.onclick = () => { detailRangeDays = b.dataset.days ? Number(b.dataset.days) : null; renderDetailCharts(p); };
+  });
+
+  // Gráfica del historial propio filtrada por el rango elegido
+  const hist = historyWithin(full, detailRangeDays);
+  const canvas = $('d-chart');
+  const geom = drawDetailChart(canvas, hist, currency);
+  attachChartHover(canvas, hist, currency, geom);
+
+  // Histórico de Keepa (solo productos de Amazon)
+  const info = amazonInfo(p);
+  const sec = $('d-keepa-section');
+  if (info) {
+    sec.classList.remove('hidden');
+    const kr = $('d-keepa-range');
+    kr.innerHTML = KEEPA_RANGES.map((r) =>
+      `<button class="range-btn ${r.days === keepaRangeDays ? 'active' : ''}" data-days="${r.days}">${r.label}</button>`
+    ).join('');
+    kr.querySelectorAll('.range-btn').forEach((b) => {
+      b.onclick = () => { keepaRangeDays = Number(b.dataset.days); renderDetailCharts(p); };
+    });
+    const img = $('d-keepa-img');
+    const fallback = $('d-keepa-fallback');
+    fallback.classList.add('hidden');
+    img.classList.remove('hidden');
+    img.onerror = () => { img.classList.add('hidden'); fallback.classList.remove('hidden'); };
+    img.src = keepaImgUrl(info.asin, info.domain, keepaRangeDays);
+    $('d-keepa-link').onclick = (e) => { e.preventDefault(); window.api.openExternal(keepaPageUrl(info.asin, info.domain)); };
+  } else {
+    sec.classList.add('hidden');
+  }
 }
 
 // ---- Eventos ----
@@ -705,6 +820,10 @@ window.api.onAutoRefresh(() => refreshAll(true));
 (async function init() {
   state = await window.api.loadData();
   if (!state.products) state = { products: [], lastRefresh: 0 };
+  // Migración: se retira Coolmod (sustituida por Amazon) de datos anteriores.
+  for (const p of state.products) {
+    if (p.sources) p.sources = p.sources.filter((s) => domainOf(s.url) !== 'coolmod.com' && s.domain !== 'coolmod.com');
+  }
   render();
   // Actualización automática si los datos llevan más de 12h sin refrescar
   if (state.products.length > 0 && Date.now() - (state.lastRefresh || 0) > STALE_MS) {

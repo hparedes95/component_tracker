@@ -2,7 +2,7 @@ const { app, BrowserWindow, ipcMain, Notification, shell } = require('electron')
 const path = require('path');
 const fs = require('fs');
 const { fetchPrice, extractPrice, extractPriceFromText } = require('./src/pricefetcher');
-const { storeSearchUrl, bingSearchUrl, parseStoreSearch, parseBingResults } = require('./src/discover');
+const { storeSearchUrl, bingSearchUrl, parseStoreSearch, parseBingResults, parseAmazonSearch, extractAsin } = require('./src/discover');
 
 const DATA_FILE = () => path.join(app.getPath('userData'), 'data.json');
 const REFRESH_INTERVAL_MS = 24 * 60 * 60 * 1000; // cada 24 horas
@@ -115,10 +115,11 @@ ipcMain.handle('discover', async (_e, { query, domains }) => {
   const results = [];
   for (const domain of domains) {
     let url = null;
+    const isAmazon = domain.startsWith('amazon');
     // a) Página de búsqueda de la propia tienda (cargada en el navegador)
     try {
       const html = await loadRendered(storeSearchUrl(domain, query));
-      if (html) url = parseStoreSearch(html, domain, query);
+      if (html) url = isAmazon ? parseAmazonSearch(html, `www.${domain}`) : parseStoreSearch(html, domain, query);
     } catch { /* se prueba Bing */ }
     // b) Respaldo: resultados de Bing restringidos al dominio de la tienda
     if (!url) {
@@ -126,7 +127,14 @@ ipcMain.handle('discover', async (_e, { query, domains }) => {
         const html = await loadRendered(bingSearchUrl(query, domain));
         if (html) {
           const hits = parseBingResults(html, domain);
-          if (hits.length) url = hits[0];
+          if (isAmazon) {
+            for (const h of hits) {
+              const asin = extractAsin(h);
+              if (asin) { url = `https://www.${domain}/dp/${asin}`; break; }
+            }
+          } else if (hits.length) {
+            url = hits[0];
+          }
         }
       } catch { /* sin resultado en esta tienda */ }
     }

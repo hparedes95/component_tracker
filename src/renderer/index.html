@@ -126,10 +126,32 @@
           <div id="d-change" class="d-change"></div>
         </div>
       </div>
+      <div class="chart-toolbar">
+        <div class="range-group" id="d-range"></div>
+        <div class="d-stats" id="d-stats"></div>
+      </div>
       <div class="chart-wrap">
         <canvas id="d-chart" width="820" height="260"></canvas>
         <div id="d-tooltip" class="chart-tooltip hidden"></div>
       </div>
+      <div class="chart-caption">Historial registrado por la app desde que sigues el producto.</div>
+
+      <div id="d-keepa-section" class="keepa-section hidden">
+        <div class="keepa-head">
+          <h3>📈 Histórico de precios de Amazon · hasta 5 años (Keepa)</h3>
+          <div class="range-group" id="d-keepa-range"></div>
+        </div>
+        <a id="d-keepa-link" class="keepa-img-link" href="#" title="Abrir el histórico interactivo en Keepa">
+          <img id="d-keepa-img" class="keepa-img" alt="Histórico de precios de Amazon (Keepa)" />
+        </a>
+        <div id="d-keepa-fallback" class="keepa-fallback hidden">
+          No se pudo cargar el gráfico de Keepa (revisa tu conexión). Puedes abrir el histórico completo en Keepa.
+        </div>
+        <div class="keepa-note">
+          Datos históricos proporcionados por <b>Keepa</b>. Haz clic en el gráfico para ver el histórico interactivo completo.
+        </div>
+      </div>
+
       <h3 class="d-sources-title">Tiendas</h3>
       <div id="d-sources" class="d-sources"></div>
       <div class="modal-actions space-between">

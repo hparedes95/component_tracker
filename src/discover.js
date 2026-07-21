@@ -9,8 +9,20 @@ const BAD_PATH = /buscar|busqueda|search|categoria|category|\/b\/|promocion|outl
 
 const STORE_SEARCH = {
   'pccomponentes.com': (q) => `https://www.pccomponentes.com/buscar/?query=${encodeURIComponent(q)}`,
-  'coolmod.com': (q) => `https://www.coolmod.com/busqueda?q=${encodeURIComponent(q)}`
+  'amazon.es': (q) => `https://www.amazon.es/s?k=${encodeURIComponent(q)}`
 };
+
+// Extrae el ASIN (identificador de 10 caracteres) de una URL de Amazon.
+function extractAsin(url) {
+  const m = /(?:\/dp\/|\/gp\/product\/|\/gp\/aw\/d\/|\/product\/|[?&]asin=)([A-Z0-9]{10})(?:[/?]|$)/i.exec(url || '');
+  return m ? m[1].toUpperCase() : null;
+}
+
+// Primer producto de una página de resultados de Amazon: el primer enlace /dp/ASIN.
+function parseAmazonSearch(html, host = 'www.amazon.es') {
+  const m = /\/(?:dp|gp\/product)\/([A-Z0-9]{10})/i.exec(html || '');
+  return m ? `https://${host}/dp/${m[1].toUpperCase()}` : null;
+}
 
 function storeSearchUrl(domain, query) {
   return STORE_SEARCH[domain] ? STORE_SEARCH[domain](query) : `https://www.${domain}/`;
@@ -84,5 +96,6 @@ function parseStoreSearch(html, domain, query) {
 
 module.exports = {
   STORE_SEARCH, storeSearchUrl, bingSearchUrl,
-  decodeDdgHref, parseDdgResults, parseBingResults, parseStoreSearch
+  decodeDdgHref, parseDdgResults, parseBingResults, parseStoreSearch,
+  extractAsin, parseAmazonSearch
 };

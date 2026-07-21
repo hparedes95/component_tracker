@@ -28,7 +28,15 @@ async function fetchPrice(url) {
 }
 
 function extractPrice(html) {
-  return fromJsonLd(html) || fromMetaTags(html) || fromItemprop(html) || fromJsonPatterns(html);
+  return fromJsonLd(html) || fromMetaTags(html) || fromItemprop(html) || fromAmazon(html) || fromJsonPatterns(html);
+}
+
+// --- Amazon: el precio de la caja de compra es el primer <span class="a-offscreen"> ---
+function fromAmazon(html) {
+  const m = /class="a-offscreen"\s*>\s*([^<]+?)\s*</i.exec(html);
+  if (!m) return null;
+  const price = parseNumber(m[1]);
+  return price ? { price, currency: null } : null;
 }
 
 // --- 1. JSON-LD ---
