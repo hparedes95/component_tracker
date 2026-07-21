@@ -72,6 +72,18 @@ t('sin precio devuelve null', () => {
   assert.strictEqual(extractPrice('<html><body>Página sin producto</body></html>'), null);
 });
 
+t('extractProducts saca la lista de productos de un ItemList (escaneo de mercado)', () => {
+  const html = `<script type="application/ld+json">
+    {"@type":"ItemList","itemListElement":[
+      {"@type":"Product","name":"RTX 5070 Ti","url":"https://s/a","image":"https://s/a.jpg","offers":{"price":"879,90","priceCurrency":"EUR"}},
+      {"@type":"Product","name":"RTX 5080","url":"https://s/b","offers":{"price":1199}}
+    ]}</script>`;
+  const r = require('../src/pricefetcher').extractProducts(html);
+  assert.strictEqual(r.length, 2);
+  assert.deepStrictEqual(r[0], { name: 'RTX 5070 Ti', price: 879.9, image: 'https://s/a.jpg', url: 'https://s/a' });
+  assert.strictEqual(r[1].price, 1199);
+});
+
 t('extractImage saca la imagen de og:image o de JSON-LD', () => {
   assert.strictEqual(extractImage('<meta property="og:image" content="https://x.com/a.jpg">'), 'https://x.com/a.jpg');
   assert.strictEqual(extractImage('<script type="application/ld+json">{"image":"https:\\/\\/y.com\\/b.png"}</script>'), 'https://y.com/b.png');

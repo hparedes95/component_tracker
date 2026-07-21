@@ -89,6 +89,9 @@ const amazonImageUrl = (asin) => `https://images-na.ssl-images-amazon.com/images
 const storeSearchUrl = (domain, q) =>
   (STORE_SEARCH_URL[domain] ? STORE_SEARCH_URL[domain](q) : `https://www.${domain}/`);
 
+// Icono discreto para cuando un producto aún no tiene imagen (sin emojis)
+const PLACEHOLDER_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2.5"/><circle cx="8.5" cy="10" r="1.6"/><path d="M4 16.5l4.5-4 3.5 3 3-2.5 4.5 4"/></svg>';
+
 // Imagen del producto: la foto real extraída de la web (og:image) y, si aún no
 // hay ninguna, la imagen de Amazon por ASIN como respaldo inmediato.
 function productImage(p) {
@@ -243,8 +246,8 @@ function renderGrid() {
     card.className = 'card';
     card.innerHTML = `
       <div class="card-media">
-        <div class="card-media-ph">${cat ? cat.icon : '🖥️'}</div>
-        ${img ? `<img class="card-img" loading="lazy" src="${escapeHtml(img)}" alt="" referrerpolicy="no-referrer" onerror="this.remove()" />` : ''}
+        <div class="card-media-ph">${PLACEHOLDER_SVG}</div>
+        ${img ? `<img class="card-img" loading="lazy" decoding="async" src="${escapeHtml(img)}" alt="" referrerpolicy="no-referrer" onerror="this.remove()" />` : ''}
         <button class="card-refresh" title="Actualizar este producto">⟳</button>
       </div>
       <div class="card-body">
@@ -785,6 +788,84 @@ async function followRec(entry, btn) {
   render();
 }
 
+// ---- Escaneo de mercado: busca novedades en la tienda por categoría ----
+const CATEGORY_SCAN_TERMS = {
+  gpu: 'tarjeta grafica', cpu: 'procesador', ram: 'memoria ram ddr5', mobo: 'placa base',
+  storage: 'ssd nvme', psu: 'fuente alimentacion', case: 'caja pc torre',
+  cooling: 'refrigeracion liquida cpu', monitor: 'monitor gaming', peripheral: 'teclado gaming',
+  fullpc: 'pc gaming montado'
+};
+const norm = (s) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+
+async function scanMarket(btn) {
+  const cats = [...new Set(state.products.map((p) => p.category))];
+  if (cats.length === 0) { toast('Sigue algún producto primero para escanear su categoría'); return; }
+  btn.disabled = true;
+  const original = btn.textContent;
+  const trackedNames = state.products.map((p) => norm(p.name));
+  const found = [];
+  for (let i = 0; i < cats.length; i++) {
+    const term = CATEGORY_SCAN_TERMS[cats[i]];
+    if (!term) continue;
+    btn.textContent = `Escaneando ${i + 1}/${cats.length}…`;
+    let items = [];
+    try { items = await window.api.scan(storeSearchUrl('pccomponentes.com', term)); } catch { /* categoría sin resultado */ }
+    for (const it of items) {
+      if (!it.name || !it.url) continue;
+      const n = norm(it.name);
+      if (trackedNames.some((t) => t.length > 3 && (n.includes(t) || t.includes(n)))) continue;
+      found.push({ ...it, category: cats[i] });
+    }
+  }
+  btn.disabled = false;
+  btn.textContent = original;
+  const seen = new Set(), uniq = [];
+  for (const f of found) if (!seen.has(f.url)) { seen.add(f.url); uniq.push(f); }
+  uniq.sort((a, b) => (b.price || 0) - (a.price || 0));
+  renderScanResults(uniq.slice(0, 40));
+  toast(uniq.length ? `${uniq.length} productos encontrados en la tienda` : 'No se encontraron novedades ahora — reintenta en un momento');
+}
+
+function renderScanResults(items) {
+  const title = $('scan-title'), list = $('scan-list');
+  title.classList.toggle('hidden', items.length === 0);
+  list.innerHTML = '';
+  for (const it of items) {
+    const cat = CATEGORIES.find((c) => c.id === it.category);
+    const row = document.createElement('div');
+    row.className = 'catalog-item';
+    row.innerHTML = `
+      ${it.image ? `<img class="scan-thumb" src="${escapeHtml(it.image)}" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()" />` : ''}
+      <span class="catalog-item-name">${escapeHtml(it.name)}<span class="rec-reason">${cat ? cat.icon + ' ' + cat.name : ''}</span></span>
+      ${it.price ? `<span class="catalog-price">${fmtPrice(it.price, 'EUR')}</span>` : ''}
+      <button class="btn btn-small btn-primary">Seguir</button>`;
+    row.querySelector('button').onclick = (ev) => followScanned(it, ev.target);
+    list.appendChild(row);
+  }
+}
+
+async function followScanned(it, btn) {
+  btn.disabled = true;
+  btn.textContent = 'Añadiendo…';
+  const product = {
+    id: uid(), name: it.name, category: it.category, tier: null,
+    targetPrice: null, alertNotified: false, createdAt: Date.now(),
+    sources: [{
+      id: uid(), url: it.url, store: storeName(it.url), resolved: true,
+      lastPrice: it.price ?? null, currency: 'EUR', error: null, image: it.image || null,
+      history: it.price ? [{ t: Date.now(), price: it.price }] : []
+    }]
+  };
+  state.products.push(product);
+  await save();
+  render();
+  await refreshProduct(product);
+  await save();
+  render();
+  btn.textContent = '✓ Seguido';
+  toast(`${it.name} añadido`);
+}
+
 // ---- Modal detalle ----
 function openDetail(id) {
   detailId = id;
@@ -961,8 +1042,14 @@ $('btn-cancel-add').onclick = () => $('modal-add').classList.add('hidden');
 $('btn-save-add').onclick = saveAdd;
 $('f-category').onchange = (e) => $('f-tier-wrap').classList.toggle('hidden', e.target.value !== 'fullpc');
 
-$('btn-recs').onclick = () => { renderRecs(); $('modal-recs').classList.remove('hidden'); };
+$('btn-recs').onclick = () => {
+  renderRecs();
+  $('scan-list').innerHTML = '';
+  $('scan-title').classList.add('hidden');
+  $('modal-recs').classList.remove('hidden');
+};
 $('btn-close-recs').onclick = () => $('modal-recs').classList.add('hidden');
+$('btn-scan').onclick = (e) => scanMarket(e.currentTarget);
 
 const openCatalog = () => { renderCatalog(); $('modal-catalog').classList.remove('hidden'); };
 $('btn-catalog').onclick = openCatalog;

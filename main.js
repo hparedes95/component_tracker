@@ -1,7 +1,7 @@
 const { app, BrowserWindow, ipcMain, Notification, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
-const { fetchPrice, extractPrice, extractPriceFromText, extractImage } = require('./src/pricefetcher');
+const { fetchPrice, extractPrice, extractPriceFromText, extractImage, extractProducts } = require('./src/pricefetcher');
 const {
   storeSearchUrl, bingSearchUrl, ddgSearchUrl,
   parseStoreSearch, parseBingResults, parseDdgResults, parseAmazonSearch, extractAsin
@@ -162,6 +162,14 @@ ipcMain.handle('catalog:fetch', async () => {
     const data = await res.json();
     return Array.isArray(data) && data.length ? data : null;
   } catch { return null; }
+});
+
+// Escaneo de mercado: carga un listado de la tienda y extrae los productos.
+ipcMain.handle('scan', async (_e, url) => {
+  try {
+    const html = await loadRendered(url);
+    return html ? extractProducts(html) : [];
+  } catch { return []; }
 });
 
 // ---- Notificaciones de alerta de precio ----

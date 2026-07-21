@@ -168,6 +168,47 @@ function extractPriceFromText(text) {
   return { price: best, currency: 'EUR' };
 }
 
+// Extrae una LISTA de productos de una página de listado/búsqueda de la tienda,
+// usando los datos estructurados schema.org (Product / ItemList). Sirve para el
+// escaneo de mercado: descubrir productos nuevos que el usuario no sigue.
+function extractProducts(html) {
+  const out = [];
+  const re = /<script[^>]*type\s*=\s*["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
+  let m;
+  while ((m = re.exec(html)) !== null) {
+    let data;
+    try { data = JSON.parse(m[1].trim()); } catch { continue; }
+    collectProducts(data, out);
+  }
+  const seen = new Set(), res = [];
+  for (const p of out) {
+    const k = p.url || p.name;
+    if (k && p.name && !seen.has(k)) { seen.add(k); res.push(p); }
+  }
+  return res;
+}
+
+function collectProducts(node, out) {
+  if (!node || typeof node !== 'object') return;
+  if (Array.isArray(node)) { for (const x of node) collectProducts(x, out); return; }
+  const type = node['@type'];
+  const isProduct = type === 'Product' || (Array.isArray(type) && type.includes('Product'));
+  if (isProduct && node.name) {
+    const image = Array.isArray(node.image) ? node.image[0]
+      : (typeof node.image === 'string' ? node.image : (node.image && node.image.url)) || null;
+    const url = typeof node.url === 'string' ? node.url : (node.offers && node.offers.url) || null;
+    out.push({ name: String(node.name).trim(), price: offerPrice(node.offers), image, url });
+  }
+  for (const k of ['@graph', 'itemListElement', 'item', 'hasVariant']) if (node[k]) collectProducts(node[k], out);
+}
+
+function offerPrice(offers) {
+  if (!offers) return null;
+  if (Array.isArray(offers)) { for (const o of offers) { const p = offerPrice(o); if (p) return p; } return null; }
+  const raw = offers.price ?? offers.lowPrice;
+  return raw != null ? parseNumber(raw) : null;
+}
+
 // Convierte "1.299,99", "1,299.99", "1299.99" o 1299.99 en un número.
 function parseNumber(value) {
   if (typeof value === 'number') return value > 0 ? value : null;
@@ -187,4 +228,4 @@ function parseNumber(value) {
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 
-module.exports = { fetchPrice, extractPrice, extractPriceFromText, extractImage, parseNumber };
+module.exports = { fetchPrice, extractPrice, extractPriceFromText, extractImage, extractProducts, parseNumber };

@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('api', {
   fetchPrice: (url) => ipcRenderer.invoke('price:fetch', url),
   discover: (query, domains) => ipcRenderer.invoke('discover', { query, domains }),
   fetchCatalog: () => ipcRenderer.invoke('catalog:fetch'),
+  scan: (url) => ipcRenderer.invoke('scan', url),
   notify: (title, body) => ipcRenderer.invoke('notify', { title, body }),
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
   onAutoRefresh: (cb) => ipcRenderer.on('auto-refresh', cb)
