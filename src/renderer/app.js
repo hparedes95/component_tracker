@@ -156,6 +156,7 @@ function render() {
   renderGrid();
   renderStats();
   renderLastUpdate();
+  updateRecsBadge();
 }
 
 function renderNav() {
@@ -710,6 +711,80 @@ async function addStarterPack(btn) {
   toast(`Selección top: ${added}/${pending.length} productos añadidos ✓`);
 }
 
+// ---- Motor de recomendaciones ----
+const categoryName = (id) => { const c = CATEGORIES.find((x) => x.id === id); return c ? c.name : id; };
+
+function catalogById() {
+  const m = new Map();
+  for (const e of window.CATALOG) m.set(e.id, e);
+  return m;
+}
+
+// Propone productos del catálogo que superan a lo que el usuario ya sigue.
+function getRecommendations() {
+  const trackedIds = trackedCatalogIds();
+  const trackedNames = new Set(state.products.map((p) => p.name.toLowerCase()));
+  const byId = catalogById();
+  const cats = {};   // categoría seguida -> mejor rank que ya tiene el usuario (o null)
+  for (const p of state.products) {
+    const e = p.catalogId ? byId.get(p.catalogId) : window.CATALOG.find((c) => c.label.toLowerCase() === p.name.toLowerCase());
+    if (!(p.category in cats)) cats[p.category] = null;
+    if (e && typeof e.rank === 'number') cats[p.category] = Math.max(cats[p.category] ?? -Infinity, e.rank);
+  }
+  const recs = [];
+  for (const cat in cats) {
+    const owned = cats[cat];
+    const candidates = window.CATALOG.filter((e) =>
+      e.category === cat && typeof e.rank === 'number' &&
+      !trackedIds.has(e.id) && !trackedNames.has(e.label.toLowerCase()));
+    if (candidates.length === 0) continue;
+    if (owned == null) {
+      const top = candidates.reduce((a, b) => (b.rank > a.rank ? b : a));
+      recs.push({ entry: top, reason: `Lo más top en ${categoryName(cat)}` });
+    } else {
+      for (const e of candidates) {
+        if (e.rank > owned + 0.5) recs.push({ entry: e, reason: `Supera a lo mejor que sigues en ${categoryName(cat)}` });
+      }
+    }
+  }
+  recs.sort((a, b) => b.entry.rank - a.entry.rank);
+  return recs;
+}
+
+function updateRecsBadge() {
+  const n = getRecommendations().length;
+  const b = $('recs-badge');
+  b.textContent = n;
+  b.classList.toggle('hidden', n === 0);
+}
+
+function renderRecs() {
+  const list = $('recs-list');
+  const recs = getRecommendations();
+  if (recs.length === 0) {
+    list.innerHTML = '<div class="grid-empty">Estás al día 🎉 No hay nada mejor que lo que ya sigues. Cuando salgan novedades al mercado, aparecerán aquí.</div>';
+    return;
+  }
+  list.innerHTML = '';
+  for (const r of recs) {
+    const e = r.entry, cat = CATEGORIES.find((c) => c.id === e.category);
+    const row = document.createElement('div');
+    row.className = 'catalog-item';
+    row.innerHTML = `
+      <span class="catalog-item-name">${escapeHtml(e.label)}<span class="rec-reason">${cat ? cat.icon + ' ' : ''}${escapeHtml(r.reason)}</span></span>
+      ${e.tier ? `<span class="badge badge-tier">${TIER_NAMES[e.tier]}</span>` : ''}
+      <button class="btn btn-small btn-primary">Seguir</button>`;
+    row.querySelector('button').onclick = (ev) => followRec(e, ev.target);
+    list.appendChild(row);
+  }
+}
+
+async function followRec(entry, btn) {
+  await addFromCatalog(entry, btn);
+  renderRecs();
+  render();
+}
+
 // ---- Modal detalle ----
 function openDetail(id) {
   detailId = id;
@@ -886,6 +961,9 @@ $('btn-cancel-add').onclick = () => $('modal-add').classList.add('hidden');
 $('btn-save-add').onclick = saveAdd;
 $('f-category').onchange = (e) => $('f-tier-wrap').classList.toggle('hidden', e.target.value !== 'fullpc');
 
+$('btn-recs').onclick = () => { renderRecs(); $('modal-recs').classList.remove('hidden'); };
+$('btn-close-recs').onclick = () => $('modal-recs').classList.add('hidden');
+
 const openCatalog = () => { renderCatalog(); $('modal-catalog').classList.remove('hidden'); };
 $('btn-catalog').onclick = openCatalog;
 $('btn-catalog-empty').onclick = openCatalog;
@@ -944,6 +1022,11 @@ window.api.onAutoRefresh(() => refreshAll(true));
   for (const p of state.products) {
     if (p.sources) p.sources = p.sources.filter((s) => domainOf(s.url) !== 'coolmod.com' && s.domain !== 'coolmod.com');
   }
+  // Catálogo remoto: novedades/recomendaciones actualizadas sin reinstalar
+  try {
+    const remote = await window.api.fetchCatalog();
+    if (remote && remote.length) window.CATALOG = remote;
+  } catch { /* se usa el catálogo incorporado */ }
   render();
   // Actualización automática si los datos llevan más de 12h sin refrescar
   if (state.products.length > 0 && Date.now() - (state.lastRefresh || 0) > STALE_MS) {

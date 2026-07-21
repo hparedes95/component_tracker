@@ -1,7 +1,7 @@
 {
   "name": "pc-price-tracker",
   "productName": "PC Price Tracker",
-  "version": "1.7.0",
+  "version": "1.8.0",
   "description": "Rastrea precios de componentes de PC y PCs gaming completas en tiempo real",
   "main": "main.js",
   "author": {

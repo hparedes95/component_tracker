@@ -17,6 +17,7 @@
         </div>
       </div>
       <nav id="category-nav" class="cat-nav"></nav>
+      <button id="btn-recs" class="btn btn-catalog">✨ Recomendaciones<span id="recs-badge" class="recs-badge hidden">0</span></button>
       <button id="btn-catalog" class="btn btn-catalog">🧭 Explorar catálogo top</button>
       <div class="sidebar-footer">
         <div id="last-update" class="last-update">Sin actualizar</div>
@@ -78,6 +79,22 @@
         </div>
       </div>
     </main>
+  </div>
+
+  <!-- Modal: recomendaciones -->
+  <div id="modal-recs" class="modal-overlay hidden">
+    <div class="modal modal-wide">
+      <div class="catalog-head">
+        <div>
+          <h2>✨ Recomendaciones para ti</h2>
+          <p class="catalog-sub">Componentes que <b>superan</b> a lo que ya sigues, o lo más top de tus categorías. La lista se amplía cuando salen novedades al mercado.</p>
+        </div>
+      </div>
+      <div id="recs-list" class="catalog-list"></div>
+      <div class="modal-actions">
+        <button id="btn-close-recs" class="btn btn-ghost">Cerrar</button>
+      </div>
+    </div>
   </div>
 
   <!-- Modal: catálogo top -->

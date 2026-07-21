@@ -153,6 +153,17 @@ ipcMain.handle('discover', async (_e, { query, domains }) => {
   return results;
 });
 
+// Catálogo remoto: permite ampliar/actualizar las recomendaciones sin reinstalar
+const CATALOG_URL = 'https://raw.githubusercontent.com/hparedes95/component_tracker/claude/pc-price-tracker-q9nnlj/catalog.json';
+ipcMain.handle('catalog:fetch', async () => {
+  try {
+    const res = await fetch(CATALOG_URL, { signal: AbortSignal.timeout(10000) });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return Array.isArray(data) && data.length ? data : null;
+  } catch { return null; }
+});
+
 // ---- Notificaciones de alerta de precio ----
 ipcMain.handle('notify', (_e, { title, body }) => {
   if (Notification.isSupported()) {
