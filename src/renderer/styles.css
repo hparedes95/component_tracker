@@ -176,6 +176,31 @@ h1, h2, h3, .card-price, .d-price { letter-spacing: -0.02em; }
 
 .grid-empty { grid-column: 1 / -1; text-align: center; color: var(--text-3); padding: 50px 20px; font-size: 13.5px; }
 
+/* Cabecera de grupo por categoría en la vista "Todos" */
+.grid-group {
+  grid-column: 1 / -1; display: flex; align-items: center; gap: 9px;
+  font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px;
+  color: var(--text-2); padding: 16px 2px 4px;
+}
+.grid-group:first-child { padding-top: 2px; }
+.grid-group-count {
+  background: var(--bg-3); color: var(--text-3);
+  border-radius: 20px; padding: 1px 9px; font-size: 11px; font-weight: 600;
+}
+
+/* Tarjeta compacta (sin imagen) para la vista "Todos" */
+.card-compact { content-visibility: auto; contain-intrinsic-size: 140px; }
+.card-compact .card-body { padding: 13px 15px; gap: 8px; }
+.card-compact .card-top { display: flex; align-items: flex-start; gap: 8px; }
+.card-compact .card-name { flex: 1; }
+.card-refresh-inline {
+  position: static; width: auto; height: auto; padding: 0 4px;
+  background: none; border: none; backdrop-filter: none; color: var(--text-3); font-size: 15px;
+}
+.card-refresh-inline:hover { background: none; color: var(--text); }
+
+.recs-controls { display: flex; align-items: center; gap: 10px; }
+
 /* ---- Barra de progreso de actualización ---- */
 .refresh-bar {
   position: relative; height: 26px; background: var(--bg-3);

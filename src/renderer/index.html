@@ -89,7 +89,13 @@
           <h2>✨ Recomendaciones para ti</h2>
           <p class="catalog-sub">Componentes que <b>superan</b> a lo que ya sigues. Pulsa <b>Escanear mercado</b> para buscar en la tienda novedades de tus categorías que aún no sigues.</p>
         </div>
-        <button id="btn-scan" class="btn btn-primary">🔎 Escanear mercado</button>
+        <div class="recs-controls">
+          <select id="recs-sort" title="Orden de las novedades del escaneo">
+            <option value="price-desc">Gama alta primero</option>
+            <option value="price-asc">Precio: más barato</option>
+          </select>
+          <button id="btn-scan" class="btn btn-primary">🔎 Escanear mercado</button>
+        </div>
       </div>
       <div id="recs-list" class="catalog-list"></div>
       <h3 id="scan-title" class="scan-title hidden">🆕 Novedades encontradas en la tienda</h3>

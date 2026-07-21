@@ -235,52 +235,74 @@ function renderGrid() {
     return;
   }
 
-  for (const p of products) {
-    const best = bestSource(p);
-    const pct = priceChange(p);
-    const cat = CATEGORIES.find((c) => c.id === p.category);
-    const hitTarget = p.targetPrice && best && best.lastPrice <= p.targetPrice;
+  // En "Todos" se agrupa por categoría (con cabeceras) y en modo compacto (sin
+  // imágenes); en una categoría concreta se ven las tarjetas con imagen.
+  if (activeCategory === 'all') {
+    for (const c of CATEGORIES) {
+      if (c.id === 'all') continue;
+      const items = products.filter((p) => p.category === c.id);
+      if (!items.length) continue;
+      const h = document.createElement('div');
+      h.className = 'grid-group';
+      h.innerHTML = `<span>${c.icon} ${c.name}</span><span class="grid-group-count">${items.length}</span>`;
+      grid.appendChild(h);
+      for (const p of items) grid.appendChild(buildCard(p, true));
+    }
+  } else {
+    for (const p of products) grid.appendChild(buildCard(p, false));
+  }
+}
 
-    const img = productImage(p);
-    const card = document.createElement('div');
-    card.className = 'card';
-    card.innerHTML = `
+// Construye la tarjeta de un producto. compact = sin imagen ni gráfica (vista "Todos").
+function buildCard(p, compact) {
+  const best = bestSource(p);
+  const pct = priceChange(p);
+  const cat = CATEGORIES.find((c) => c.id === p.category);
+  const hitTarget = p.targetPrice && best && best.lastPrice <= p.targetPrice;
+  const img = compact ? null : productImage(p);
+
+  const card = document.createElement('div');
+  card.className = 'card' + (compact ? ' card-compact' : '');
+  card.innerHTML = `
+    ${compact ? '' : `
       <div class="card-media">
         <div class="card-media-ph">${PLACEHOLDER_SVG}</div>
         ${img ? `<img class="card-img" loading="lazy" decoding="async" src="${escapeHtml(img)}" alt="" referrerpolicy="no-referrer" onerror="this.remove()" />` : ''}
         <button class="card-refresh" title="Actualizar este producto">⟳</button>
-      </div>
-      <div class="card-body">
+      </div>`}
+    <div class="card-body">
+      <div class="card-top">
         <div class="card-name">${escapeHtml(p.name)}</div>
-        <div class="badges">
-          <span class="badge">${cat ? cat.icon + ' ' + cat.name : p.category}</span>
-          ${p.tier ? `<span class="badge badge-tier">${TIER_NAMES[p.tier] || p.tier}</span>` : ''}
-          ${p.targetPrice ? `<span class="badge ${hitTarget ? 'badge-alert-hit' : 'badge-alert'}">🎯 ${fmtPrice(p.targetPrice, best && best.currency)}</span>` : ''}
-        </div>
-        <div class="card-price-row">
-          ${best
-            ? `<span class="card-price">${fmtPrice(best.lastPrice, best.currency)}</span>${changeBadge(pct)}`
-            : '<span class="card-price no-price">Sin precio todavía — pulsa ⟳</span>'}
-        </div>
-        <canvas class="sparkline" width="300" height="42"></canvas>
-        <div class="card-sources">
-          ${p.sources.map((s) => s.error
-            ? `<span class="source-chip error">${escapeHtml(s.store)} ✕</span>`
-            : `<span class="source-chip">${escapeHtml(s.store)} <b>${fmtPrice(s.lastPrice, s.currency)}</b></span>`
-          ).join('')}
-        </div>
-      </div>`;
+        ${compact ? '<button class="card-refresh card-refresh-inline" title="Actualizar este producto">⟳</button>' : ''}
+      </div>
+      <div class="badges">
+        ${compact ? '' : `<span class="badge">${cat ? cat.icon + ' ' + cat.name : p.category}</span>`}
+        ${p.tier ? `<span class="badge badge-tier">${TIER_NAMES[p.tier] || p.tier}</span>` : ''}
+        ${p.targetPrice ? `<span class="badge ${hitTarget ? 'badge-alert-hit' : 'badge-alert'}">🎯 ${fmtPrice(p.targetPrice, best && best.currency)}</span>` : ''}
+      </div>
+      <div class="card-price-row">
+        ${best
+          ? `<span class="card-price">${fmtPrice(best.lastPrice, best.currency)}</span>${changeBadge(pct)}`
+          : '<span class="card-price no-price">Sin precio todavía — pulsa ⟳</span>'}
+      </div>
+      ${compact ? '' : '<canvas class="sparkline" width="300" height="42"></canvas>'}
+      <div class="card-sources">
+        ${p.sources.map((s) => s.error
+          ? `<span class="source-chip error">${escapeHtml(s.store)} ✕</span>`
+          : `<span class="source-chip">${escapeHtml(s.store)} <b>${fmtPrice(s.lastPrice, s.currency)}</b></span>`
+        ).join('')}
+      </div>
+    </div>`;
 
-    card.onclick = () => openDetail(p.id);
-    card.querySelector('.card-refresh').onclick = async (e) => {
-      e.stopPropagation();
-      await refreshProduct(p);
-      await save();
-      render();
-    };
-    grid.appendChild(card);
-    drawSparkline(card.querySelector('.sparkline'), bestHistory(p));
-  }
+  card.onclick = () => openDetail(p.id);
+  card.querySelector('.card-refresh').onclick = async (e) => {
+    e.stopPropagation();
+    await refreshProduct(p);
+    await save();
+    render();
+  };
+  if (!compact) drawSparkline(card.querySelector('.sparkline'), bestHistory(p));
+  return card;
 }
 
 function renderStats() {
@@ -761,6 +783,29 @@ function updateRecsBadge() {
   b.classList.toggle('hidden', n === 0);
 }
 
+// Agrupa una lista por categoría, en el orden de CATEGORIES
+function groupByCategory(items, catOf) {
+  const res = [];
+  for (const c of CATEGORIES) {
+    if (c.id === 'all') continue;
+    const g = items.filter((it) => catOf(it) === c.id);
+    if (g.length) res.push({ cat: c, items: g });
+  }
+  return res;
+}
+
+function buildRecRow(r) {
+  const e = r.entry;
+  const row = document.createElement('div');
+  row.className = 'catalog-item';
+  row.innerHTML = `
+    <span class="catalog-item-name">${escapeHtml(e.label)}<span class="rec-reason">${escapeHtml(r.reason)}</span></span>
+    ${e.tier ? `<span class="badge badge-tier">${TIER_NAMES[e.tier]}</span>` : ''}
+    <button class="btn btn-small btn-primary">Seguir</button>`;
+  row.querySelector('button').onclick = (ev) => followRec(e, ev.target);
+  return row;
+}
+
 function renderRecs() {
   const list = $('recs-list');
   const recs = getRecommendations();
@@ -769,16 +814,14 @@ function renderRecs() {
     return;
   }
   list.innerHTML = '';
-  for (const r of recs) {
-    const e = r.entry, cat = CATEGORIES.find((c) => c.id === e.category);
-    const row = document.createElement('div');
-    row.className = 'catalog-item';
-    row.innerHTML = `
-      <span class="catalog-item-name">${escapeHtml(e.label)}<span class="rec-reason">${cat ? cat.icon + ' ' : ''}${escapeHtml(r.reason)}</span></span>
-      ${e.tier ? `<span class="badge badge-tier">${TIER_NAMES[e.tier]}</span>` : ''}
-      <button class="btn btn-small btn-primary">Seguir</button>`;
-    row.querySelector('button').onclick = (ev) => followRec(e, ev.target);
-    list.appendChild(row);
+  // Agrupado por categoría y, dentro, por gama (mejor rendimiento primero)
+  for (const g of groupByCategory(recs, (r) => r.entry.category)) {
+    const h = document.createElement('div');
+    h.className = 'catalog-group';
+    h.textContent = `${g.cat.icon} ${g.cat.name}`;
+    list.appendChild(h);
+    g.items.sort((a, b) => b.entry.rank - a.entry.rank);
+    for (const r of g.items) list.appendChild(buildRecRow(r));
   }
 }
 
@@ -821,26 +864,38 @@ async function scanMarket(btn) {
   btn.textContent = original;
   const seen = new Set(), uniq = [];
   for (const f of found) if (!seen.has(f.url)) { seen.add(f.url); uniq.push(f); }
-  uniq.sort((a, b) => (b.price || 0) - (a.price || 0));
-  renderScanResults(uniq.slice(0, 40));
+  lastScanItems = uniq.slice(0, 60);
+  renderScanResults();
   toast(uniq.length ? `${uniq.length} productos encontrados en la tienda` : 'No se encontraron novedades ahora — reintenta en un momento');
 }
 
-function renderScanResults(items) {
+let lastScanItems = [];
+
+function buildScanRow(it) {
+  const row = document.createElement('div');
+  row.className = 'catalog-item';
+  row.innerHTML = `
+    ${it.image ? `<img class="scan-thumb" src="${escapeHtml(it.image)}" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()" />` : ''}
+    <span class="catalog-item-name">${escapeHtml(it.name)}</span>
+    ${it.price ? `<span class="catalog-price">${fmtPrice(it.price, 'EUR')}</span>` : ''}
+    <button class="btn btn-small btn-primary">Seguir</button>`;
+  row.querySelector('button').onclick = (ev) => followScanned(it, ev.target);
+  return row;
+}
+
+// Agrupa las novedades por categoría y ordena por precio dentro de cada una
+function renderScanResults() {
   const title = $('scan-title'), list = $('scan-list');
-  title.classList.toggle('hidden', items.length === 0);
+  title.classList.toggle('hidden', lastScanItems.length === 0);
   list.innerHTML = '';
-  for (const it of items) {
-    const cat = CATEGORIES.find((c) => c.id === it.category);
-    const row = document.createElement('div');
-    row.className = 'catalog-item';
-    row.innerHTML = `
-      ${it.image ? `<img class="scan-thumb" src="${escapeHtml(it.image)}" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()" />` : ''}
-      <span class="catalog-item-name">${escapeHtml(it.name)}<span class="rec-reason">${cat ? cat.icon + ' ' + cat.name : ''}</span></span>
-      ${it.price ? `<span class="catalog-price">${fmtPrice(it.price, 'EUR')}</span>` : ''}
-      <button class="btn btn-small btn-primary">Seguir</button>`;
-    row.querySelector('button').onclick = (ev) => followScanned(it, ev.target);
-    list.appendChild(row);
+  const dir = $('recs-sort').value === 'price-asc' ? 1 : -1;
+  for (const g of groupByCategory(lastScanItems, (it) => it.category)) {
+    const h = document.createElement('div');
+    h.className = 'catalog-group';
+    h.textContent = `${g.cat.icon} ${g.cat.name}`;
+    list.appendChild(h);
+    g.items.sort((a, b) => ((a.price || 0) - (b.price || 0)) * dir);
+    for (const it of g.items) list.appendChild(buildScanRow(it));
   }
 }
 
@@ -1044,12 +1099,13 @@ $('f-category').onchange = (e) => $('f-tier-wrap').classList.toggle('hidden', e.
 
 $('btn-recs').onclick = () => {
   renderRecs();
-  $('scan-list').innerHTML = '';
-  $('scan-title').classList.add('hidden');
+  lastScanItems = [];
+  renderScanResults();
   $('modal-recs').classList.remove('hidden');
 };
 $('btn-close-recs').onclick = () => $('modal-recs').classList.add('hidden');
 $('btn-scan').onclick = (e) => scanMarket(e.currentTarget);
+$('recs-sort').onchange = () => renderScanResults();
 
 const openCatalog = () => { renderCatalog(); $('modal-catalog').classList.remove('hidden'); };
 $('btn-catalog').onclick = openCatalog;
