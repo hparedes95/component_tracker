@@ -413,6 +413,18 @@ function attachChartHover(canvas, hist, currency, geom) {
 
 // ---- Actualización de precios ----
 async function refreshProduct(p) {
+  // Automático: si el producto no tiene ningún origen de Amazon, se le añade uno
+  // (sin resolver) para que el bucle localice su ficha y aparezca el histórico
+  // sin que el usuario tenga que pegar el enlace a mano.
+  const hasAmazon = p.sources.some((s) => domainOf(s.url).startsWith('amazon') || (s.domain || '').startsWith('amazon'));
+  if (!hasAmazon) {
+    p.sources.push({
+      id: uid(), domain: 'amazon.es', query: p.name,
+      url: storeSearchUrl('amazon.es', p.name), store: 'amazon',
+      resolved: false, lastPrice: null, currency: null, error: null, history: []
+    });
+  }
+
   for (const s of p.sources) {
     // Fuentes del catálogo: si aún no se ha localizado la ficha del producto en
     // la tienda, se intenta descubrir su URL real antes de leer el precio.
