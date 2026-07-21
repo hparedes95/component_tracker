@@ -136,19 +136,31 @@
       </div>
       <div class="chart-caption">Historial registrado por la app desde que sigues el producto.</div>
 
-      <div id="d-keepa-section" class="keepa-section hidden">
+      <div id="d-keepa-section" class="keepa-section">
         <div class="keepa-head">
-          <h3>📈 Histórico de precios de Amazon · hasta 5 años (Keepa)</h3>
-          <div class="range-group" id="d-keepa-range"></div>
+          <h3>📈 Histórico de precios de Amazon · hasta 5 años</h3>
+          <div class="keepa-controls" id="d-keepa-controls">
+            <div class="range-group" id="d-provider"></div>
+            <div class="range-group" id="d-keepa-range"></div>
+          </div>
         </div>
-        <a id="d-keepa-link" class="keepa-img-link" href="#" title="Abrir el histórico interactivo en Keepa">
-          <img id="d-keepa-img" class="keepa-img" alt="Histórico de precios de Amazon (Keepa)" />
-        </a>
-        <div id="d-keepa-fallback" class="keepa-fallback hidden">
-          No se pudo cargar el gráfico de Keepa (revisa tu conexión). Puedes abrir el histórico completo en Keepa.
+        <div id="d-keepa-view" class="hidden">
+          <a id="d-keepa-link" class="keepa-img-link" href="#" title="Abrir el histórico interactivo completo">
+            <img id="d-keepa-img" class="keepa-img" alt="Histórico de precios de Amazon" />
+          </a>
+          <div id="d-keepa-fallback" class="keepa-fallback hidden">
+            No se pudo cargar el gráfico. Prueba el otro proveedor (Keepa / Camel) o ábrelo con el enlace de abajo.
+          </div>
+          <div class="keepa-note">
+            Datos de <b>Keepa</b> / <b>CamelCamelCamel</b>. Haz clic en el gráfico para ver el histórico interactivo completo.
+          </div>
         </div>
-        <div class="keepa-note">
-          Datos históricos proporcionados por <b>Keepa</b>. Haz clic en el gráfico para ver el histórico interactivo completo.
+        <div id="d-keepa-prompt" class="keepa-prompt hidden">
+          <p>Para ver el histórico de años atrás, pega aquí la URL de Amazon (o el ASIN) de este producto:</p>
+          <div class="asin-row">
+            <input id="d-asin-input" type="text" placeholder="https://www.amazon.es/dp/XXXXXXXXXX  ·  o el ASIN de 10 caracteres" />
+            <button id="d-asin-btn" class="btn btn-primary btn-small">Ver histórico</button>
+          </div>
         </div>
       </div>
 

@@ -84,7 +84,22 @@ t('extractPriceFromText elige el valor más repetido (precio del producto)', () 
 });
 
 // ---- Tests del descubridor de URLs ----
-const { parseDdgResults, parseStoreSearch, parseBingResults, decodeDdgHref, extractAsin, parseAmazonSearch } = require('../src/discover');
+const { parseDdgResults, parseStoreSearch, parseBingResults, decodeDdgHref, decodeBingHref, extractAsin, parseAmazonSearch } = require('../src/discover');
+
+t('decodeBingHref decodifica el redirect /ck/a de Bing a la URL real', () => {
+  const real = 'https://www.amazon.es/dp/B0REAL1234';
+  const b64 = Buffer.from(real).toString('base64').replace(/\+/g, '-').replace(/\//g, '_');
+  const href = `https://www.bing.com/ck/a?!&&p=xx&u=a1${b64}&ntb=1`;
+  assert.strictEqual(decodeBingHref(href), real);
+  assert.strictEqual(decodeBingHref('https://www.amazon.es/dp/B0DIRECT123'), 'https://www.amazon.es/dp/B0DIRECT123');
+});
+
+t('parseBingResults extrae la ficha de Amazon aunque venga como redirect', () => {
+  const real = 'https://www.amazon.es/msi-rtx/dp/B0REAL1234';
+  const b64 = Buffer.from(real).toString('base64').replace(/\+/g, '-').replace(/\//g, '_');
+  const html = `<a href="https://www.bing.com/ck/a?u=a1${b64}&ntb=1">MSI</a>`;
+  assert.deepStrictEqual(parseBingResults(html, 'amazon.es'), ['https://www.amazon.es/msi-rtx/dp/B0REAL1234']);
+});
 
 t('extractAsin obtiene el ASIN de varias formas de URL de Amazon', () => {
   assert.strictEqual(extractAsin('https://www.amazon.es/dp/B0CGXXXX99'), 'B0CGXXXX99');

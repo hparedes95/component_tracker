@@ -67,13 +67,17 @@ const extractAsin = (url) => {
   const m = /(?:\/dp\/|\/gp\/product\/|\/gp\/aw\/d\/|\/product\/|[?&]asin=)([A-Z0-9]{10})(?:[/?]|$)/i.exec(url || '');
   return m ? m[1].toUpperCase() : null;
 };
-// Devuelve {asin, domain} del primer origen de Amazon del producto, o null
+const CAMEL_COUNTRY = {
+  'amazon.com': 'us', 'amazon.co.uk': 'uk', 'amazon.de': 'de', 'amazon.fr': 'fr',
+  'amazon.it': 'it', 'amazon.es': 'es', 'amazon.ca': 'ca', 'amazon.co.jp': 'jp', 'amazon.in': 'in'
+};
+// Devuelve {asin, domain, country} del primer origen de Amazon del producto, o null
 const amazonInfo = (p) => {
   for (const s of p.sources) {
     const host = domainOf(s.url);
     if (host && host.startsWith('amazon')) {
       const asin = extractAsin(s.url);
-      if (asin) return { asin, domain: AMAZON_KEEPA_DOMAIN[host] || 9 };
+      if (asin) return { asin, domain: AMAZON_KEEPA_DOMAIN[host] || 9, country: CAMEL_COUNTRY[host] || 'es' };
     }
   }
   return null;
@@ -82,6 +86,17 @@ const keepaImgUrl = (asin, domain, days) =>
   `https://graph.keepa.com/pricehistory.png?asin=${asin}&domain=${domain}` +
   `&width=820&height=280&range=${days}&amazon=1&new=1&used=0&salesrank=0`;
 const keepaPageUrl = (asin, domain) => `https://keepa.com/#!product/${domain}-${asin}`;
+
+// CamelCamelCamel: gráfico por imagen y página, como alternativa a Keepa
+const camelTp = (days) =>
+  days <= 31 ? '1m' : days <= 93 ? '3m' : days <= 186 ? '6m' : days <= 366 ? '1y' : days <= 740 ? '2y' : 'all';
+const camelImgUrl = (asin, country, days) =>
+  `https://charts.camelcamelcamel.com/${country}/${asin}/amazon.png` +
+  `?force=1&zero=0&w=820&h=280&desired=false&legend=1&ilt=1&tp=${camelTp(days)}&fo=0&lang=es`;
+const camelPageUrl = (asin, country) =>
+  `https://${country === 'us' ? '' : country + '.'}camelcamelcamel.com/product/${asin}`;
+
+let keepaProvider = 'keepa';
 const storeSearchUrl = (domain, q) =>
   (STORE_SEARCH_URL[domain] ? STORE_SEARCH_URL[domain](q) : `https://www.${domain}/`);
 
@@ -749,28 +764,74 @@ function renderDetailCharts(p) {
   const geom = drawDetailChart(canvas, hist, currency);
   attachChartHover(canvas, hist, currency, geom);
 
-  // Histórico de Keepa (solo productos de Amazon)
+  // Histórico a largo plazo (Keepa / CamelCamelCamel) — productos de Amazon
   const info = amazonInfo(p);
-  const sec = $('d-keepa-section');
+  const view = $('d-keepa-view'), prompt = $('d-keepa-prompt'), controls = $('d-keepa-controls');
   if (info) {
-    sec.classList.remove('hidden');
-    const kr = $('d-keepa-range');
-    kr.innerHTML = KEEPA_RANGES.map((r) =>
+    view.classList.remove('hidden');
+    prompt.classList.add('hidden');
+    controls.classList.remove('hidden');
+
+    // Selector de proveedor
+    $('d-provider').innerHTML = [['keepa', 'Keepa'], ['camel', 'Camel']].map(([id, lbl]) =>
+      `<button class="range-btn ${id === keepaProvider ? 'active' : ''}" data-p="${id}">${lbl}</button>`
+    ).join('');
+    $('d-provider').querySelectorAll('.range-btn').forEach((b) => {
+      b.onclick = () => { keepaProvider = b.dataset.p; renderDetailCharts(p); };
+    });
+
+    // Selector de rango
+    $('d-keepa-range').innerHTML = KEEPA_RANGES.map((r) =>
       `<button class="range-btn ${r.days === keepaRangeDays ? 'active' : ''}" data-days="${r.days}">${r.label}</button>`
     ).join('');
-    kr.querySelectorAll('.range-btn').forEach((b) => {
+    $('d-keepa-range').querySelectorAll('.range-btn').forEach((b) => {
       b.onclick = () => { keepaRangeDays = Number(b.dataset.days); renderDetailCharts(p); };
     });
-    const img = $('d-keepa-img');
-    const fallback = $('d-keepa-fallback');
+
+    // Imagen del histórico según proveedor
+    const img = $('d-keepa-img'), fallback = $('d-keepa-fallback');
     fallback.classList.add('hidden');
     img.classList.remove('hidden');
     img.onerror = () => { img.classList.add('hidden'); fallback.classList.remove('hidden'); };
-    img.src = keepaImgUrl(info.asin, info.domain, keepaRangeDays);
-    $('d-keepa-link').onclick = (e) => { e.preventDefault(); window.api.openExternal(keepaPageUrl(info.asin, info.domain)); };
+    img.src = keepaProvider === 'keepa'
+      ? keepaImgUrl(info.asin, info.domain, keepaRangeDays)
+      : camelImgUrl(info.asin, info.country, keepaRangeDays);
+    $('d-keepa-link').onclick = (e) => {
+      e.preventDefault();
+      window.api.openExternal(keepaProvider === 'keepa'
+        ? keepaPageUrl(info.asin, info.domain)
+        : camelPageUrl(info.asin, info.country));
+    };
   } else {
-    sec.classList.add('hidden');
+    // Sin ASIN todavía: se ofrece pegar la URL de Amazon para activarlo
+    view.classList.add('hidden');
+    controls.classList.add('hidden');
+    prompt.classList.remove('hidden');
+    $('d-asin-input').value = '';
+    $('d-asin-btn').onclick = () => setAmazonFromInput(p);
   }
+}
+
+// Añade/actualiza el origen de Amazon del producto a partir de una URL o ASIN
+// pegados por el usuario, y activa al momento el histórico y el precio.
+async function setAmazonFromInput(p) {
+  const raw = $('d-asin-input').value.trim();
+  const asin = extractAsin(raw) || (/^[A-Z0-9]{10}$/i.test(raw) ? raw.toUpperCase() : null);
+  if (!asin) { toast('Pega una URL de Amazon válida o un ASIN de 10 caracteres'); return; }
+  const url = `https://www.amazon.es/dp/${asin}`;
+  let s = p.sources.find((x) => domainOf(x.url).startsWith('amazon'));
+  if (s) {
+    s.url = url; s.store = 'amazon'; s.domain = 'amazon.es'; s.resolved = true; s.query = undefined; s.error = null;
+  } else {
+    p.sources.push({ id: uid(), url, store: 'amazon', domain: 'amazon.es', resolved: true, lastPrice: null, currency: null, error: null, history: [] });
+  }
+  await save();
+  renderDetailCharts(p);   // el gráfico histórico aparece de inmediato
+  toast('Obteniendo precio de Amazon…');
+  await refreshProduct(p);
+  await save();
+  render();
+  renderDetailCharts(p);
 }
 
 // ---- Eventos ----

@@ -2,7 +2,10 @@ const { app, BrowserWindow, ipcMain, Notification, shell } = require('electron')
 const path = require('path');
 const fs = require('fs');
 const { fetchPrice, extractPrice, extractPriceFromText } = require('./src/pricefetcher');
-const { storeSearchUrl, bingSearchUrl, parseStoreSearch, parseBingResults, parseAmazonSearch, extractAsin } = require('./src/discover');
+const {
+  storeSearchUrl, bingSearchUrl, ddgSearchUrl,
+  parseStoreSearch, parseBingResults, parseDdgResults, parseAmazonSearch, extractAsin
+} = require('./src/discover');
 
 const DATA_FILE = () => path.join(app.getPath('userData'), 'data.json');
 const REFRESH_INTERVAL_MS = 24 * 60 * 60 * 1000; // cada 24 horas
@@ -110,33 +113,40 @@ ipcMain.handle('price:fetch', async (_e, url) => {
   }
 });
 
+// Carga una URL con el navegador y aplica un parser; nunca lanza.
+async function tryDiscover(url, parser) {
+  try {
+    const html = await loadRendered(url);
+    return html ? parser(html) : null;
+  } catch { return null; }
+}
+
+// Primer enlace de la lista que contenga un ASIN, normalizado a /dp/ASIN.
+function firstAsinUrl(list, domain) {
+  for (const h of list) {
+    const asin = extractAsin(h);
+    if (asin) return `https://www.${domain}/dp/${asin}`;
+  }
+  return null;
+}
+
 // ---- Descubrimiento de la URL del producto en cada tienda ----
 ipcMain.handle('discover', async (_e, { query, domains }) => {
   const results = [];
   for (const domain of domains) {
     let url = null;
-    const isAmazon = domain.startsWith('amazon');
-    // a) Página de búsqueda de la propia tienda (cargada en el navegador)
-    try {
-      const html = await loadRendered(storeSearchUrl(domain, query));
-      if (html) url = isAmazon ? parseAmazonSearch(html, `www.${domain}`) : parseStoreSearch(html, domain, query);
-    } catch { /* se prueba Bing */ }
-    // b) Respaldo: resultados de Bing restringidos al dominio de la tienda
-    if (!url) {
-      try {
-        const html = await loadRendered(bingSearchUrl(query, domain));
-        if (html) {
-          const hits = parseBingResults(html, domain);
-          if (isAmazon) {
-            for (const h of hits) {
-              const asin = extractAsin(h);
-              if (asin) { url = `https://www.${domain}/dp/${asin}`; break; }
-            }
-          } else if (hits.length) {
-            url = hits[0];
-          }
-        }
-      } catch { /* sin resultado en esta tienda */ }
+    if (domain.startsWith('amazon')) {
+      // DuckDuckGo da enlaces directos amazon.es/dp; luego el buscador de
+      // Amazon y, por último, Bing (con sus redirecciones ya decodificadas).
+      url = await tryDiscover(ddgSearchUrl(query, domain), (h) => firstAsinUrl(parseDdgResults(h, domain), domain));
+      if (!url) url = await tryDiscover(storeSearchUrl(domain, query), (h) => parseAmazonSearch(h, `www.${domain}`));
+      if (!url) url = await tryDiscover(bingSearchUrl(query, domain), (h) => firstAsinUrl(parseBingResults(h, domain), domain));
+    } else {
+      url = await tryDiscover(storeSearchUrl(domain, query), (h) => parseStoreSearch(h, domain, query));
+      if (!url) url = await tryDiscover(bingSearchUrl(query, domain), (h) => {
+        const hits = parseBingResults(h, domain);
+        return hits.length ? hits[0] : null;
+      });
     }
     if (url) results.push({ domain, url });
   }

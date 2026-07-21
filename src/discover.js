@@ -32,6 +32,24 @@ function bingSearchUrl(query, domain) {
   return `https://www.bing.com/search?q=${encodeURIComponent(`site:${domain} ${query}`)}`;
 }
 
+function ddgSearchUrl(query, domain) {
+  return `https://duckduckgo.com/html/?q=${encodeURIComponent(`site:${domain} ${query}`)}`;
+}
+
+// Bing envuelve muchos resultados en /ck/a?...&u=a1<base64url>. Lo decodifica.
+function decodeBingHref(href) {
+  try {
+    const u = new URL(href, 'https://www.bing.com');
+    if (!u.hostname.endsWith('bing.com')) return href;
+    const p = u.searchParams.get('u');
+    if (p && p.startsWith('a1')) {
+      const b64 = p.slice(2).replace(/-/g, '+').replace(/_/g, '/');
+      return Buffer.from(b64, 'base64').toString('utf8');
+    }
+    return null;
+  } catch { return null; }
+}
+
 // DuckDuckGo envuelve los resultados en /l/?uddg=<url codificada>
 function decodeDdgHref(href) {
   const m = /[?&]uddg=([^&]+)/.exec(href);
@@ -63,11 +81,14 @@ function parseDdgResults(html, domain) {
 // Enlaces de una página de resultados de Bing filtrados por dominio de tienda
 function parseBingResults(html, domain) {
   const urls = [];
-  const re = /<a[^>]+href="(https?:\/\/[^"]+)"/gi;
+  const re = /<a[^>]+href="([^"]+)"/gi;
   let m;
   while ((m = re.exec(html)) !== null) {
+    const raw = m[1].replace(/&amp;/g, '&');
+    const real = decodeBingHref(raw);
+    if (!real) continue;
     let u;
-    try { u = new URL(m[1].replace(/&amp;/g, '&')); } catch { continue; }
+    try { u = new URL(real); } catch { continue; }
     if (!u.hostname.endsWith(domain) || !isProductPath(u.pathname)) continue;
     const clean = u.origin + u.pathname;
     if (!urls.includes(clean)) urls.push(clean);
@@ -95,7 +116,7 @@ function parseStoreSearch(html, domain, query) {
 }
 
 module.exports = {
-  STORE_SEARCH, storeSearchUrl, bingSearchUrl,
-  decodeDdgHref, parseDdgResults, parseBingResults, parseStoreSearch,
+  STORE_SEARCH, storeSearchUrl, bingSearchUrl, ddgSearchUrl,
+  decodeDdgHref, decodeBingHref, parseDdgResults, parseBingResults, parseStoreSearch,
   extractAsin, parseAmazonSearch
 };
