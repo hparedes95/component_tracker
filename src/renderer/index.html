@@ -38,6 +38,24 @@
         <button id="btn-add" class="btn btn-primary">+ Añadir producto</button>
       </header>
 
+      <div class="filterbar">
+        <label class="fb-sort">Ordenar por
+          <select id="sort">
+            <option value="recent">Recientes</option>
+            <option value="price-asc">Precio: más barato primero</option>
+            <option value="price-desc">Precio: más caro primero</option>
+            <option value="drop">Mayor bajada de precio</option>
+            <option value="name">Nombre (A–Z)</option>
+          </select>
+        </label>
+        <div class="fb-chips" id="fb-chips">
+          <button class="fb-chip" data-filter="drops">📉 Bajadas</button>
+          <button class="fb-chip" data-filter="atmin">🔥 En mínimo</button>
+          <button class="fb-chip" data-filter="target">🎯 Bajo objetivo</button>
+          <button class="fb-chip" data-filter="amazon">📦 Con Amazon</button>
+        </div>
+      </div>
+
       <div id="refresh-bar" class="refresh-bar hidden">
         <div class="refresh-bar-fill" id="refresh-bar-fill"></div>
         <span id="refresh-bar-text"></span>
@@ -140,7 +158,6 @@
         <div class="keepa-head">
           <h3>📈 Histórico de precios de Amazon · hasta 5 años</h3>
           <div class="keepa-controls" id="d-keepa-controls">
-            <div class="range-group" id="d-provider"></div>
             <div class="range-group" id="d-keepa-range"></div>
           </div>
         </div>
@@ -152,7 +169,7 @@
             No se pudo cargar el gráfico. Prueba el otro proveedor (Keepa / Camel) o ábrelo con el enlace de abajo.
           </div>
           <div class="keepa-note">
-            Datos de <b>Keepa</b> / <b>CamelCamelCamel</b>. Haz clic en el gráfico para ver el histórico interactivo completo.
+            Datos históricos de <b>Keepa</b>. Haz clic en el gráfico para ver el histórico interactivo completo.
           </div>
         </div>
         <div id="d-keepa-prompt" class="keepa-prompt hidden">

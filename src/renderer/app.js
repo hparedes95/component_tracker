@@ -19,6 +19,8 @@ const STALE_MS = 12 * 60 * 60 * 1000; // actualizar al abrir si han pasado >12h
 let state = { products: [], lastRefresh: 0 };
 let activeCategory = 'all';
 let searchTerm = '';
+let sortBy = 'recent';
+const activeFilters = new Set();
 let editingId = null;   // producto en edición en el modal de añadir
 let detailId = null;    // producto abierto en el modal de detalle
 let refreshing = false;
@@ -67,17 +69,13 @@ const extractAsin = (url) => {
   const m = /(?:\/dp\/|\/gp\/product\/|\/gp\/aw\/d\/|\/product\/|[?&]asin=)([A-Z0-9]{10})(?:[/?]|$)/i.exec(url || '');
   return m ? m[1].toUpperCase() : null;
 };
-const CAMEL_COUNTRY = {
-  'amazon.com': 'us', 'amazon.co.uk': 'uk', 'amazon.de': 'de', 'amazon.fr': 'fr',
-  'amazon.it': 'it', 'amazon.es': 'es', 'amazon.ca': 'ca', 'amazon.co.jp': 'jp', 'amazon.in': 'in'
-};
-// Devuelve {asin, domain, country} del primer origen de Amazon del producto, o null
+// Devuelve {asin, domain} del primer origen de Amazon del producto, o null
 const amazonInfo = (p) => {
   for (const s of p.sources) {
     const host = domainOf(s.url);
     if (host && host.startsWith('amazon')) {
       const asin = extractAsin(s.url);
-      if (asin) return { asin, domain: AMAZON_KEEPA_DOMAIN[host] || 9, country: CAMEL_COUNTRY[host] || 'es' };
+      if (asin) return { asin, domain: AMAZON_KEEPA_DOMAIN[host] || 9 };
     }
   }
   return null;
@@ -86,17 +84,6 @@ const keepaImgUrl = (asin, domain, days) =>
   `https://graph.keepa.com/pricehistory.png?asin=${asin}&domain=${domain}` +
   `&width=820&height=280&range=${days}&amazon=1&new=1&used=0&salesrank=0`;
 const keepaPageUrl = (asin, domain) => `https://keepa.com/#!product/${domain}-${asin}`;
-
-// CamelCamelCamel: gráfico por imagen y página, como alternativa a Keepa
-const camelTp = (days) =>
-  days <= 31 ? '1m' : days <= 93 ? '3m' : days <= 186 ? '6m' : days <= 366 ? '1y' : days <= 740 ? '2y' : 'all';
-const camelImgUrl = (asin, country, days) =>
-  `https://charts.camelcamelcamel.com/${country}/${asin}/amazon.png` +
-  `?force=1&zero=0&w=820&h=280&desired=false&legend=1&ilt=1&tp=${camelTp(days)}&fo=0&lang=es`;
-const camelPageUrl = (asin, country) =>
-  `https://${country === 'us' ? '' : country + '.'}camelcamelcamel.com/product/${asin}`;
-
-let keepaProvider = 'keepa';
 const storeSearchUrl = (domain, q) =>
   (STORE_SEARCH_URL[domain] ? STORE_SEARCH_URL[domain](q) : `https://www.${domain}/`);
 
@@ -177,12 +164,45 @@ function renderNav() {
   }
 }
 
+// Filtros rápidos activables por chips
+function passesFilters(p) {
+  for (const f of activeFilters) {
+    if (f === 'drops') { const c = priceChange(p); if (!(c != null && c < -0.005)) return false; }
+    else if (f === 'atmin') { const st = computeStats(bestHistory(p)); if (!(st && st.cur <= st.min * 1.005)) return false; }
+    else if (f === 'target') { const b = bestSource(p); if (!(p.targetPrice && b && b.lastPrice <= p.targetPrice)) return false; }
+    else if (f === 'amazon') { if (!amazonInfo(p)) return false; }
+  }
+  return true;
+}
+
+// Ordena la lista; los productos sin precio quedan siempre al final
+function sortProducts(list) {
+  const priceOf = (p) => { const b = bestSource(p); return b && b.lastPrice != null ? b.lastPrice : null; };
+  const cmpNum = (a, b, dir) => {
+    if (a == null && b == null) return 0;
+    if (a == null) return 1;
+    if (b == null) return -1;
+    return (a - b) * dir;
+  };
+  const arr = [...list];
+  switch (sortBy) {
+    case 'price-asc': arr.sort((a, b) => cmpNum(priceOf(a), priceOf(b), 1)); break;
+    case 'price-desc': arr.sort((a, b) => cmpNum(priceOf(a), priceOf(b), -1)); break;
+    case 'name': arr.sort((a, b) => a.name.localeCompare(b.name, 'es')); break;
+    case 'drop': arr.sort((a, b) => cmpNum(priceChange(a), priceChange(b), 1)); break;
+    default: arr.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  }
+  return arr;
+}
+
 function visibleProducts() {
-  return state.products.filter((p) => {
+  const list = state.products.filter((p) => {
     if (activeCategory !== 'all' && p.category !== activeCategory) return false;
     if (searchTerm && !p.name.toLowerCase().includes(searchTerm)) return false;
+    if (!passesFilters(p)) return false;
     return true;
   });
+  return sortProducts(list);
 }
 
 function renderGrid() {
@@ -195,6 +215,11 @@ function renderGrid() {
   empty.classList.toggle('hidden', !noneAtAll);
   grid.classList.toggle('hidden', noneAtAll);
   if (noneAtAll) return;
+
+  if (products.length === 0) {
+    grid.innerHTML = '<div class="grid-empty">Ningún producto coincide con el filtro o la búsqueda.</div>';
+    return;
+  }
 
   for (const p of products) {
     const best = bestSource(p);
@@ -776,21 +801,13 @@ function renderDetailCharts(p) {
   const geom = drawDetailChart(canvas, hist, currency);
   attachChartHover(canvas, hist, currency, geom);
 
-  // Histórico a largo plazo (Keepa / CamelCamelCamel) — productos de Amazon
+  // Histórico a largo plazo de Keepa — productos de Amazon
   const info = amazonInfo(p);
   const view = $('d-keepa-view'), prompt = $('d-keepa-prompt'), controls = $('d-keepa-controls');
   if (info) {
     view.classList.remove('hidden');
     prompt.classList.add('hidden');
     controls.classList.remove('hidden');
-
-    // Selector de proveedor
-    $('d-provider').innerHTML = [['keepa', 'Keepa'], ['camel', 'Camel']].map(([id, lbl]) =>
-      `<button class="range-btn ${id === keepaProvider ? 'active' : ''}" data-p="${id}">${lbl}</button>`
-    ).join('');
-    $('d-provider').querySelectorAll('.range-btn').forEach((b) => {
-      b.onclick = () => { keepaProvider = b.dataset.p; renderDetailCharts(p); };
-    });
 
     // Selector de rango
     $('d-keepa-range').innerHTML = KEEPA_RANGES.map((r) =>
@@ -800,19 +817,15 @@ function renderDetailCharts(p) {
       b.onclick = () => { keepaRangeDays = Number(b.dataset.days); renderDetailCharts(p); };
     });
 
-    // Imagen del histórico según proveedor
+    // Imagen del histórico de Keepa
     const img = $('d-keepa-img'), fallback = $('d-keepa-fallback');
     fallback.classList.add('hidden');
     img.classList.remove('hidden');
     img.onerror = () => { img.classList.add('hidden'); fallback.classList.remove('hidden'); };
-    img.src = keepaProvider === 'keepa'
-      ? keepaImgUrl(info.asin, info.domain, keepaRangeDays)
-      : camelImgUrl(info.asin, info.country, keepaRangeDays);
+    img.src = keepaImgUrl(info.asin, info.domain, keepaRangeDays);
     $('d-keepa-link').onclick = (e) => {
       e.preventDefault();
-      window.api.openExternal(keepaProvider === 'keepa'
-        ? keepaPageUrl(info.asin, info.domain)
-        : camelPageUrl(info.asin, info.country));
+      window.api.openExternal(keepaPageUrl(info.asin, info.domain));
     };
   } else {
     // Sin ASIN todavía: se ofrece pegar la URL de Amazon para activarlo
@@ -862,6 +875,15 @@ $('btn-starter-cat').onclick = (e) => addStarterPack(e.target);
 
 $('btn-refresh').onclick = () => refreshAll(false);
 $('search').oninput = (e) => { searchTerm = e.target.value.toLowerCase(); renderGrid(); };
+$('sort').onchange = (e) => { sortBy = e.target.value; renderGrid(); };
+document.querySelectorAll('#fb-chips .fb-chip').forEach((chip) => {
+  chip.onclick = () => {
+    const f = chip.dataset.filter;
+    if (activeFilters.has(f)) activeFilters.delete(f); else activeFilters.add(f);
+    chip.classList.toggle('active');
+    renderGrid();
+  };
+});
 
 $('btn-close-detail').onclick = () => $('modal-detail').classList.add('hidden');
 $('btn-edit').onclick = () => {
