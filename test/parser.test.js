@@ -1,6 +1,6 @@
 // Tests del extractor de precios: node test/parser.test.js
 const assert = require('assert');
-const { extractPrice, parseNumber } = require('../src/pricefetcher');
+const { extractPrice, extractPriceFromText, parseNumber } = require('../src/pricefetcher');
 
 let passed = 0;
 function t(name, fn) {
@@ -66,8 +66,28 @@ t('sin precio devuelve null', () => {
   assert.strictEqual(extractPrice('<html><body>Página sin producto</body></html>'), null);
 });
 
+t('extractPriceFromText detecta el precio en euros del texto renderizado', () => {
+  assert.deepStrictEqual(extractPriceFromText('Bla bla 629,90 € IVA incluido bla'), { price: 629.9, currency: 'EUR' });
+  assert.deepStrictEqual(extractPriceFromText('Precio: € 1.899,00 hoy'), { price: 1899, currency: 'EUR' });
+  assert.strictEqual(extractPriceFromText('sin precio por aquí'), null);
+});
+
+t('extractPriceFromText elige el valor más repetido (precio del producto)', () => {
+  const txt = 'Añadir 1.299,00 € al carrito. Total 1.299,00 €. Envío 4,99 €.';
+  assert.deepStrictEqual(extractPriceFromText(txt), { price: 1299, currency: 'EUR' });
+});
+
 // ---- Tests del descubridor de URLs ----
-const { parseDdgResults, parseStoreSearch, decodeDdgHref } = require('../src/discover');
+const { parseDdgResults, parseStoreSearch, parseBingResults, decodeDdgHref } = require('../src/discover');
+
+t('parseBingResults filtra por dominio y descarta rutas de búsqueda', () => {
+  const html = `
+    <li class="b_algo"><h2><a href="https://www.coolmod.com/msi-geforce-rtx-5070-ventus">x</a></h2></li>
+    <li class="b_algo"><h2><a href="https://www.otratienda.com/rtx-5070">y</a></h2></li>
+    <a href="https://www.coolmod.com/busqueda?q=rtx">buscar</a>`;
+  assert.deepStrictEqual(parseBingResults(html, 'coolmod.com'),
+    ['https://www.coolmod.com/msi-geforce-rtx-5070-ventus']);
+});
 
 t('decodeDdgHref extrae la URL del redirect de DuckDuckGo', () => {
   assert.strictEqual(

@@ -46,6 +46,19 @@ function storeName(url) {
   }
 }
 
+const domainOf = (u) => {
+  try { return new URL(u).hostname.replace(/^www\./, ''); } catch { return ''; }
+};
+
+// Constructores de la URL de búsqueda de cada tienda (respaldo cuando aún no se
+// ha localizado la ficha exacta del producto; permite "Abrir en tienda").
+const STORE_SEARCH_URL = {
+  'pccomponentes.com': (q) => `https://www.pccomponentes.com/buscar/?query=${encodeURIComponent(q)}`,
+  'coolmod.com': (q) => `https://www.coolmod.com/busqueda?q=${encodeURIComponent(q)}`
+};
+const storeSearchUrl = (domain, q) =>
+  (STORE_SEARCH_URL[domain] ? STORE_SEARCH_URL[domain](q) : `https://www.${domain}/`);
+
 // Mejor precio actual entre todas las tiendas del producto
 function bestSource(p) {
   let best = null;
@@ -360,6 +373,19 @@ function attachChartHover(canvas, hist, currency, geom) {
 // ---- Actualización de precios ----
 async function refreshProduct(p) {
   for (const s of p.sources) {
+    // Fuentes del catálogo: si aún no se ha localizado la ficha del producto en
+    // la tienda, se intenta descubrir su URL real antes de leer el precio.
+    if (s.query && !s.resolved) {
+      try {
+        const f = await window.api.discover(s.query, [s.domain || domainOf(s.url)]);
+        if (f && f.length) { s.url = f[0].url; s.store = storeName(s.url); s.resolved = true; }
+      } catch { /* se reintentará en la próxima actualización */ }
+    }
+    if (s.query && !s.resolved) {
+      s.error = 'No localizado en la tienda todavía (reintenta con ⟳)';
+      continue;
+    }
+
     const res = await window.api.fetchPrice(s.url);
     if (res.ok) {
       s.lastPrice = res.price;
@@ -478,13 +504,13 @@ async function saveAdd() {
     // Conserva el historial de las URLs que se mantienen
     const oldByUrl = new Map(product.sources.map((s) => [s.url, s]));
     product.sources = urls.map((u) => oldByUrl.get(u) ||
-      ({ id: uid(), url: u, store: storeName(u), lastPrice: null, currency: null, error: null, history: [] }));
+      ({ id: uid(), url: u, store: storeName(u), resolved: true, lastPrice: null, currency: null, error: null, history: [] }));
   } else {
     product = {
       id: uid(), name, category, tier, targetPrice, alertNotified: false,
       createdAt: Date.now(),
       sources: urls.map((u) =>
-        ({ id: uid(), url: u, store: storeName(u), lastPrice: null, currency: null, error: null, history: [] }))
+        ({ id: uid(), url: u, store: storeName(u), resolved: true, lastPrice: null, currency: null, error: null, history: [] }))
     };
     state.products.push(product);
   }
@@ -544,31 +570,32 @@ function renderCatalog() {
 
 async function addFromCatalog(entry, btn) {
   btn.disabled = true;
-  btn.textContent = 'Buscando…';
-  const found = await window.api.discover(entry.query, CATALOG_STORES);
-  if (found.length === 0) {
-    btn.disabled = false;
-    btn.textContent = 'Seguir';
-    toast(`No se encontró "${entry.label}" en las tiendas — puedes añadirlo manualmente con su URL`);
-    return false;
-  }
+  btn.textContent = 'Importando…';
+  // El producto se importa SIEMPRE. Cada fuente arranca sin resolver y con la
+  // URL de búsqueda de la tienda; refreshProduct localizará la ficha real y
+  // leerá el precio. Así nunca se queda "sin importar" aunque una tienda falle.
   const product = {
     id: uid(), catalogId: entry.id, name: entry.label,
     category: entry.category, tier: entry.tier || null,
     targetPrice: null, alertNotified: false, createdAt: Date.now(),
-    sources: found.map((f) =>
-      ({ id: uid(), url: f.url, store: storeName(f.url), lastPrice: null, currency: null, error: null, history: [] }))
+    sources: CATALOG_STORES.map((domain) => ({
+      id: uid(), domain, query: entry.query,
+      url: storeSearchUrl(domain, entry.query), store: domain.split('.')[0],
+      resolved: false, lastPrice: null, currency: null, error: null, history: []
+    }))
   };
   state.products.push(product);
-  await refreshProduct(product);
+  render();          // el producto aparece al instante en la cuadrícula
+  renderCatalog();
+  await refreshProduct(product);   // localiza la ficha y lee el precio real
   await save();
   render();
   renderCatalog();
   const best = bestSource(product);
   toast(best
     ? `${entry.label}: ${fmtPrice(best.lastPrice, best.currency)} ✓`
-    : `${entry.label} añadido, pero sin precio aún — reintenta con ⟳`);
-  return true;
+    : `${entry.label} importado. Precio no disponible ahora — pulsa ⟳ para reintentar`);
+  return !!best;
 }
 
 // Pack inicial: añade en un clic lo más top de cada gama

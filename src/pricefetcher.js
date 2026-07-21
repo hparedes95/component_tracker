@@ -125,6 +125,28 @@ function fromJsonPatterns(html) {
   return null;
 }
 
+// Último recurso: busca precios en euros dentro del texto renderizado de la
+// página (cuando no hay datos estructurados). Elige el valor más repetido y,
+// en caso de empate, el mayor — el precio del producto suele destacar.
+function extractPriceFromText(text) {
+  if (typeof text !== 'string') return null;
+  const values = [];
+  const re = /(?:€|EUR)\s*([0-9][0-9.\s]*(?:,[0-9]{2})?|[0-9][0-9.,]*)|([0-9][0-9.\s]*,[0-9]{2}|[0-9]{2,}(?:[.,][0-9]{3})*)\s*(?:€|EUR)/gi;
+  let m;
+  while ((m = re.exec(text)) !== null) {
+    const val = parseNumber(m[1] || m[2]);
+    if (val && val >= 5 && val <= 20000) values.push(val);
+  }
+  if (values.length === 0) return null;
+  const freq = new Map();
+  for (const v of values) freq.set(v, (freq.get(v) || 0) + 1);
+  let best = values[0], bestF = 0;
+  for (const [v, f] of freq) {
+    if (f > bestF || (f === bestF && v > best)) { best = v; bestF = f; }
+  }
+  return { price: best, currency: 'EUR' };
+}
+
 // Convierte "1.299,99", "1,299.99", "1299.99" o 1299.99 en un número.
 function parseNumber(value) {
   if (typeof value === 'number') return value > 0 ? value : null;
@@ -144,4 +166,4 @@ function parseNumber(value) {
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 
-module.exports = { fetchPrice, extractPrice, parseNumber };
+module.exports = { fetchPrice, extractPrice, extractPriceFromText, parseNumber };

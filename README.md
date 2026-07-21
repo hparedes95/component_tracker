@@ -13,7 +13,8 @@ Aplicación de escritorio para **rastrear precios de componentes de PC y PCs gam
 - **Actualización automática diaria** mientras la app está abierta, y también al abrirla si los datos tienen más de 12 horas. Botón de actualización manual cuando quieras.
 - **Historial de precios con gráficas** interactivas y mini-gráficas en cada tarjeta.
 - **Alertas de precio objetivo**: recibe una notificación de escritorio cuando el producto baje del precio que tú marques.
-- **Funciona con la mayoría de tiendas**: PcComponentes, Coolmod, Neobyte, Izarmicro, LDLC, Newegg, MediaMarkt y, en general, cualquier tienda moderna (detecta el precio mediante datos estructurados schema.org, metaetiquetas y patrones comunes).
+- **Lee precios reales aunque la tienda bloquee bots**: la app carga las páginas en el navegador Chromium que ya trae integrado (como si abrieras la web tú), lo que evita los bloqueos `403` que impiden leer el precio con peticiones normales. Detecta el precio mediante datos estructurados schema.org, metaetiquetas, microdatos y, como último recurso, el texto de la página.
+- **Los productos se importan siempre**: al seguir un producto del catálogo, aparece al instante; la app localiza su ficha en la tienda y actualiza el precio. Si una tienda no responde en ese momento, el producto queda añadido y basta pulsar ⟳ para reintentar.
 - **Interfaz oscura, moderna y en español**, con buscador y filtros por categoría.
 - **Tus datos son tuyos**: todo se guarda en local, sin cuentas ni servidores.
 
