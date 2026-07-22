@@ -235,22 +235,10 @@ function renderGrid() {
     return;
   }
 
-  // En "Todos" se agrupa por categoría (con cabeceras) y en modo compacto (sin
-  // imágenes); en una categoría concreta se ven las tarjetas con imagen.
-  if (activeCategory === 'all') {
-    for (const c of CATEGORIES) {
-      if (c.id === 'all') continue;
-      const items = products.filter((p) => p.category === c.id);
-      if (!items.length) continue;
-      const h = document.createElement('div');
-      h.className = 'grid-group';
-      h.innerHTML = `<span>${c.icon} ${c.name}</span><span class="grid-group-count">${items.length}</span>`;
-      grid.appendChild(h);
-      for (const p of items) grid.appendChild(buildCard(p, true));
-    }
-  } else {
-    for (const p of products) grid.appendChild(buildCard(p, false));
-  }
+  // En "Todos": tarjetas compactas (solo nombre y precio). En una categoría
+  // concreta: tarjetas completas con imagen.
+  const compact = activeCategory === 'all';
+  for (const p of products) grid.appendChild(buildCard(p, compact));
 }
 
 // Construye la tarjeta de un producto.
