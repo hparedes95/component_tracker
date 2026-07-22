@@ -504,6 +504,16 @@ async function refreshProduct(p) {
 
     const res = await window.api.fetchPrice(s.url);
     if (res.ok) {
+      // Verificación: si la ficha se localizó por búsqueda, confirmamos que el
+      // producto de la página coincide; si no, no registramos un precio erróneo.
+      if (s.query && res.name && !looksLikeSameProduct(p.name, res.name)) {
+        s.productName = res.name;
+        s.mismatch = true;
+        s.error = 'El enlace no coincide con el producto — revísalo o edítalo';
+        continue;
+      }
+      s.mismatch = false;
+      if (res.name) s.productName = res.name;
       s.lastPrice = res.price;
       s.currency = res.currency || s.currency || 'EUR';
       if (res.image) s.image = res.image;
@@ -876,6 +886,19 @@ const CATEGORY_SCAN_TERMS = {
 };
 const norm = (s) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 
+// ¿La página localizada corresponde al producto buscado? Compara "tokens fuertes"
+// (modelos/capacidades con dígitos, p.ej. 5070, 9800x3d, 2tb) y acepta si al menos
+// uno coincide. Evita registrar precios de un producto distinto (falsos positivos).
+function strongTokens(s) {
+  return (norm(s).match(/[a-z0-9]*\d[a-z0-9]*/g) || []).filter((t) => t.length >= 3);
+}
+function looksLikeSameProduct(intended, detected) {
+  const a = strongTokens(intended);
+  if (a.length === 0) return true;   // sin tokens discriminantes, no rechazamos
+  const d = new Set(strongTokens(detected));
+  return a.some((t) => d.has(t));
+}
+
 async function scanMarket(btn) {
   const cats = [...new Set(state.products.map((p) => p.category))];
   if (cats.length === 0) { toast('Sigue algún producto primero para escanear su categoría'); return; }
@@ -984,11 +1007,14 @@ function openDetail(id) {
     (pct < 0 ? '▼ ' : pct > 0 ? '▲ ' : '= ') + Math.abs(pct).toFixed(1) + '% desde ayer';
 
   $('d-sources').innerHTML = p.sources.map((s) => `
-    <div class="d-source">
-      <span class="d-source-store">${escapeHtml(s.store)}</span>
-      <a class="d-source-link" data-url="${escapeHtml(s.url)}">Abrir en tienda ↗</a>
+    <div class="d-source ${s.mismatch ? 'd-source-warn' : ''}">
+      <div class="d-source-info">
+        <span class="d-source-store">${escapeHtml(s.store)}</span>
+        ${s.productName ? `<span class="d-source-detected">${escapeHtml(s.productName)}</span>` : ''}
+      </div>
+      <a class="d-source-link" data-url="${escapeHtml(s.url)}">Abrir ↗</a>
       ${s.error
-        ? `<span class="d-source-err">Error: ${escapeHtml(s.error)}</span>`
+        ? `<span class="d-source-err">${escapeHtml(s.error)}</span>`
         : `<span class="d-source-price ${best && s.id === best.id ? 'd-source-best' : ''}">${fmtPrice(s.lastPrice, s.currency)}</span>`}
     </div>`).join('');
   $('d-sources').querySelectorAll('.d-source-link').forEach((a) => {

@@ -1,7 +1,7 @@
 const { app, BrowserWindow, ipcMain, Notification, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
-const { fetchPrice, extractPrice, extractPriceFromText, extractImage, extractProducts } = require('./src/pricefetcher');
+const { fetchPrice, extractPrice, extractPriceFromText, extractImage, extractName, extractProducts } = require('./src/pricefetcher');
 const {
   storeSearchUrl, bingSearchUrl, ddgSearchUrl,
   parseStoreSearch, parseBingResults, parseDdgResults, parseAmazonSearch, extractAsin
@@ -106,7 +106,7 @@ ipcMain.handle('price:fetch', async (_e, url) => {
     const html = await loadRendered(url);
     if (!html) return { ok: false, error: 'La página no cargó' };
     const r = extractPrice(html) || extractPriceFromText(html);
-    if (r && r.price) return { ok: true, via: 'navegador', ...r, image: extractImage(html) };
+    if (r && r.price) return { ok: true, via: 'navegador', ...r, image: extractImage(html), name: extractName(html) };
     return { ok: false, error: 'No se encontró precio en la página' };
   } catch (err) {
     return { ok: false, error: err.message };

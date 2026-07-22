@@ -1,6 +1,6 @@
 // Tests del extractor de precios: node test/parser.test.js
 const assert = require('assert');
-const { extractPrice, extractPriceFromText, extractImage, parseNumber } = require('../src/pricefetcher');
+const { extractPrice, extractPriceFromText, extractImage, extractName, parseNumber } = require('../src/pricefetcher');
 
 let passed = 0;
 function t(name, fn) {
@@ -38,6 +38,32 @@ t('JSON-LD array con @graph y AggregateOffer', () => {
     {"@graph":[{"@type":"Product","offers":{"@type":"AggregateOffer","lowPrice":1149.5,"priceCurrency":"EUR"}}]}
   </script>`;
   assert.deepStrictEqual(extractPrice(html), { price: 1149.5, currency: 'EUR' });
+});
+
+t('JSON-LD prioriza el precio mostrado sobre lowPrice (evita falsas bajadas)', () => {
+  const html = `<script type="application/ld+json">
+    {"@type":"Product","name":"X","offers":{"@type":"AggregateOffer","price":"649.90","lowPrice":"499.00","priceCurrency":"EUR"}}
+  </script>`;
+  assert.deepStrictEqual(extractPrice(html), { price: 649.9, currency: 'EUR' });
+});
+
+t('JSON-LD usa lowPrice solo si no hay price', () => {
+  const html = `<script type="application/ld+json">
+    {"@type":"Product","offers":{"@type":"AggregateOffer","lowPrice":"499.00","priceCurrency":"EUR"}}
+  </script>`;
+  assert.deepStrictEqual(extractPrice(html), { price: 499, currency: 'EUR' });
+});
+
+t('precio de Amazon toma el de la caja de compra (priceToPay), no el tachado', () => {
+  const html = `
+    <span class="a-price a-text-price"><span class="a-offscreen">899,00 €</span></span>
+    <div class="a-price priceToPay"><span class="a-offscreen">799,00 €</span></div>`;
+  assert.deepStrictEqual(extractPrice(html), { price: 799, currency: null });
+});
+
+t('extractName obtiene el nombre del producto', () => {
+  assert.strictEqual(extractName('<meta property="og:title" content="MSI RTX 5070 Ti Ventus">'), 'MSI RTX 5070 Ti Ventus');
+  assert.strictEqual(extractName('<title>Placa base X - Tienda</title>'), 'Placa base X - Tienda');
 });
 
 t('JSON-LD inválido no rompe y cae a meta tags', () => {

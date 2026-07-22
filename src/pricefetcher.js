@@ -24,7 +24,7 @@ async function fetchPrice(url) {
   const html = await res.text();
   const result = extractPrice(html);
   if (!result) throw new Error('No se encontró precio en la página');
-  return { ...result, image: extractImage(html) };
+  return { ...result, image: extractImage(html), name: extractName(html) };
 }
 
 // Extrae la imagen principal del producto (og:image / twitter:image / JSON-LD).
@@ -44,49 +44,70 @@ function extractPrice(html) {
   return fromJsonLd(html) || fromMetaTags(html) || fromItemprop(html) || fromAmazon(html) || fromJsonPatterns(html);
 }
 
-// --- Amazon: el precio de la caja de compra es el primer <span class="a-offscreen"> ---
+// --- Amazon: el precio de la CAJA DE COMPRA (priceToPay), no el tachado ---
 function fromAmazon(html) {
-  const m = /class="a-offscreen"\s*>\s*([^<]+?)\s*</i.exec(html);
+  // Primero el precio dentro del contenedor de compra real
+  let m = /class="[^"]*(?:priceToPay|apexPriceToPay|reinventPricePriceToPay)[^"]*"[\s\S]{0,260}?class="a-offscreen"\s*>\s*([^<]+?)\s*</i.exec(html);
+  if (!m) m = /class="a-offscreen"\s*>\s*([^<]+?)\s*</i.exec(html);
   if (!m) return null;
   const price = parseNumber(m[1]);
   return price ? { price, currency: null } : null;
 }
 
+// Nombre del producto de la página (para verificar que el enlace es el correcto)
+function extractName(html) {
+  const og = metaContent(html, ['og:title', 'twitter:title']);
+  if (og) return cleanText(og);
+  const m = /"@type"\s*:\s*"Product"[\s\S]{0,400}?"name"\s*:\s*"([^"]+)"/i.exec(html);
+  if (m) return cleanText(m[1]);
+  const t = /<title[^>]*>([^<]+)<\/title>/i.exec(html);
+  return t ? cleanText(t[1]) : null;
+}
+
+function cleanText(s) {
+  return String(s)
+    .replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&nbsp;/g, ' ')
+    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(+n))
+    .replace(/\s+/g, ' ').trim();
+}
+
 // --- 1. JSON-LD ---
+// Dos pasadas: primero el precio MOSTRADO (`price`); solo si no hay ninguno se
+// recurre a `lowPrice`. Así se evita coger el precio más barato de otros
+// vendedores/marketplace, que provocaba falsas bajadas.
 function fromJsonLd(html) {
+  return jsonLdPrice(html, 'price') || jsonLdPrice(html, 'lowPrice');
+}
+
+function jsonLdPrice(html, field) {
   const re = /<script[^>]*type\s*=\s*["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
   let m;
   while ((m = re.exec(html)) !== null) {
     let data;
-    try {
-      data = JSON.parse(m[1].trim());
-    } catch {
-      continue;
-    }
-    const found = searchJsonLd(data);
+    try { data = JSON.parse(m[1].trim()); } catch { continue; }
+    const found = searchJsonLd(data, field);
     if (found) return found;
   }
   return null;
 }
 
-function searchJsonLd(node) {
+function searchJsonLd(node, field) {
   if (node == null || typeof node !== 'object') return null;
   if (Array.isArray(node)) {
     for (const item of node) {
-      const found = searchJsonLd(item);
+      const found = searchJsonLd(item, field);
       if (found) return found;
     }
     return null;
   }
-  // Un nodo Offer con precio
-  const rawPrice = node.price ?? node.lowPrice;
-  if (rawPrice != null) {
-    const price = parseNumber(rawPrice);
+  const raw = node[field];
+  if (raw != null) {
+    const price = parseNumber(raw);
     if (price) return { price, currency: node.priceCurrency || null };
   }
   for (const key of ['offers', '@graph', 'mainEntity', 'itemListElement', 'item', 'hasVariant']) {
     if (node[key]) {
-      const found = searchJsonLd(node[key]);
+      const found = searchJsonLd(node[key], field);
       if (found) return found;
     }
   }
@@ -228,4 +249,4 @@ function parseNumber(value) {
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 
-module.exports = { fetchPrice, extractPrice, extractPriceFromText, extractImage, extractProducts, parseNumber };
+module.exports = { fetchPrice, extractPrice, extractPriceFromText, extractImage, extractName, extractProducts, parseNumber };
