@@ -253,7 +253,8 @@ h1, h2, h3, .card-price, .d-price { letter-spacing: -0.02em; }
   color: #fff; cursor: pointer; font-size: 15px;
   backdrop-filter: blur(4px);
 }
-.card-refresh:hover { background: rgba(124, 108, 240, .7); }
+.card-refresh:hover { background: rgba(10, 132, 255, .7); }
+.card-refresh.spinning { animation: spin 1s linear infinite; }
 
 .card-body { padding: 14px 16px 16px; display: flex; flex-direction: column; gap: 10px; }
 .card-name { font-weight: 650; font-size: 14.5px; line-height: 1.35; }

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, Notification, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, Notification, shell, session } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { fetchPrice, extractPrice, extractPriceFromText, extractImage, extractName, extractProducts } = require('./src/pricefetcher');
@@ -51,7 +51,7 @@ async function loadRendered(url) {
     show: false,
     width: 1280,
     height: 900,
-    webPreferences: { sandbox: true }
+    webPreferences: { sandbox: true, partition: 'scrape' }
   });
   win.webContents.setUserAgent(CHROME_UA);
 
@@ -184,6 +184,12 @@ ipcMain.handle('open-external', (_e, url) => {
 });
 
 app.whenReady().then(() => {
+  // Las ventanas de scraping usan una sesión que NO descarga imágenes, vídeo ni
+  // fuentes: el precio está en el HTML, así que las páginas cargan mucho antes.
+  session.fromPartition('scrape').webRequest.onBeforeRequest((details, cb) => {
+    cb({ cancel: ['image', 'media', 'font'].includes(details.resourceType) });
+  });
+
   createWindow();
 
   // Actualización automática diaria mientras la app esté abierta.

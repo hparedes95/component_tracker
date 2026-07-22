@@ -294,9 +294,17 @@ function buildCard(p, compact) {
   card.onclick = () => openDetail(p.id);
   card.querySelector('.card-refresh').onclick = async (e) => {
     e.stopPropagation();
-    await refreshProduct(p);
-    await save();
-    render();
+    const btn = e.currentTarget;
+    if (btn.dataset.busy) return;      // evita doble pulsación
+    btn.dataset.busy = '1';
+    btn.classList.add('spinning');
+    try {
+      await refreshProduct(p);
+      await save();
+    } catch (err) {
+      toast('No se pudo actualizar: ' + (err && err.message ? err.message : 'error'));
+    }
+    render();                          // reconstruye la tarjeta ya actualizada
   };
   if (!compact) drawSparkline(card.querySelector('.sparkline'), bestHistory(p));
   return card;
@@ -563,14 +571,21 @@ async function refreshAll(auto = false) {
   const text = $('refresh-bar-text');
   bar.classList.remove('hidden');
 
-  for (let i = 0; i < state.products.length; i++) {
-    const p = state.products[i];
-    text.textContent = `Actualizando ${i + 1}/${state.products.length}: ${p.name}`;
-    fill.style.width = ((i / state.products.length) * 100) + '%';
-    await refreshProduct(p);
-    // Pequeña pausa entre productos para no saturar las tiendas
-    await new Promise((r) => setTimeout(r, 400));
-  }
+  // Se procesan varios productos a la vez (más rápido) con un límite de
+  // concurrencia para no abrir demasiadas páginas en el navegador a la vez.
+  const total = state.products.length;
+  const queue = [...state.products];
+  let done = 0;
+  const worker = async () => {
+    while (queue.length) {
+      const p = queue.shift();
+      await refreshProduct(p);
+      done++;
+      text.textContent = `Actualizando ${done}/${total}…`;
+      fill.style.width = ((done / total) * 100) + '%';
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(3, total) }, worker));
 
   fill.style.width = '100%';
   state.lastRefresh = Date.now();
@@ -1198,6 +1213,19 @@ $('btn-edit').onclick = () => {
   const p = state.products.find((x) => x.id === detailId);
   $('modal-detail').classList.add('hidden');
   if (p) openAdd(p);
+};
+$('btn-reset-history').onclick = async () => {
+  const p = state.products.find((x) => x.id === detailId);
+  if (!p) return;
+  if (!confirm(`¿Reiniciar el historial de "${p.name}"? Se borran las lecturas anteriores (incluidas bajadas erróneas) y se empieza de cero con el precio actual.`)) return;
+  for (const s of p.sources) {
+    s.history = (s.lastPrice != null && !s.mismatch) ? [{ t: Date.now(), price: s.lastPrice }] : [];
+  }
+  p.alertNotified = false;
+  await save();
+  render();
+  openDetail(p.id);
+  toast('Historial reiniciado');
 };
 $('btn-delete').onclick = async () => {
   const p = state.products.find((x) => x.id === detailId);
