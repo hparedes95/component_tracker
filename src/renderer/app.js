@@ -253,46 +253,55 @@ function renderGrid() {
   }
 }
 
-// Construye la tarjeta de un producto. compact = sin imagen ni gráfica (vista "Todos").
+// Construye la tarjeta de un producto.
+//   compact = vista "Todos": SOLO nombre y precio (sin imagen, badges ni tiendas).
 function buildCard(p, compact) {
   const best = bestSource(p);
   const pct = priceChange(p);
   const cat = CATEGORIES.find((c) => c.id === p.category);
   const hitTarget = p.targetPrice && best && best.lastPrice <= p.targetPrice;
-  const img = compact ? null : productImage(p);
+
+  const priceRow = best
+    ? `<span class="card-price">${fmtPrice(best.lastPrice, best.currency)}</span>${changeBadge(pct)}`
+    : '<span class="card-price no-price">Sin precio — pulsa ⟳</span>';
 
   const card = document.createElement('div');
   card.className = 'card' + (compact ? ' card-compact' : '');
-  card.innerHTML = `
-    ${compact ? '' : `
+
+  if (compact) {
+    card.innerHTML = `
+      <div class="card-body">
+        <div class="card-top">
+          <div class="card-name">${escapeHtml(p.name)}</div>
+          <button class="card-refresh card-refresh-inline" title="Actualizar este producto">⟳</button>
+        </div>
+        <div class="card-price-row">${priceRow}</div>
+      </div>`;
+  } else {
+    const img = productImage(p);
+    card.innerHTML = `
       <div class="card-media">
         <div class="card-media-ph">${PLACEHOLDER_SVG}</div>
         ${img ? `<img class="card-img" loading="lazy" decoding="async" src="${escapeHtml(img)}" alt="" referrerpolicy="no-referrer" onerror="this.remove()" />` : ''}
         <button class="card-refresh" title="Actualizar este producto">⟳</button>
-      </div>`}
-    <div class="card-body">
-      <div class="card-top">
+      </div>
+      <div class="card-body">
         <div class="card-name">${escapeHtml(p.name)}</div>
-        ${compact ? '<button class="card-refresh card-refresh-inline" title="Actualizar este producto">⟳</button>' : ''}
-      </div>
-      <div class="badges">
-        ${compact ? '' : `<span class="badge">${cat ? cat.icon + ' ' + cat.name : p.category}</span>`}
-        ${p.tier ? `<span class="badge badge-tier">${TIER_NAMES[p.tier] || p.tier}</span>` : ''}
-        ${p.targetPrice ? `<span class="badge ${hitTarget ? 'badge-alert-hit' : 'badge-alert'}">🎯 ${fmtPrice(p.targetPrice, best && best.currency)}</span>` : ''}
-      </div>
-      <div class="card-price-row">
-        ${best
-          ? `<span class="card-price">${fmtPrice(best.lastPrice, best.currency)}</span>${changeBadge(pct)}`
-          : '<span class="card-price no-price">Sin precio todavía — pulsa ⟳</span>'}
-      </div>
-      ${compact ? '' : '<canvas class="sparkline" width="300" height="42"></canvas>'}
-      <div class="card-sources">
-        ${p.sources.map((s) => s.error
-          ? `<span class="source-chip error">${escapeHtml(s.store)} ✕</span>`
-          : `<span class="source-chip">${escapeHtml(s.store)} <b>${fmtPrice(s.lastPrice, s.currency)}</b></span>`
-        ).join('')}
-      </div>
-    </div>`;
+        <div class="badges">
+          <span class="badge">${cat ? cat.icon + ' ' + cat.name : p.category}</span>
+          ${p.tier ? `<span class="badge badge-tier">${TIER_NAMES[p.tier] || p.tier}</span>` : ''}
+          ${p.targetPrice ? `<span class="badge ${hitTarget ? 'badge-alert-hit' : 'badge-alert'}">🎯 ${fmtPrice(p.targetPrice, best && best.currency)}</span>` : ''}
+        </div>
+        <div class="card-price-row">${priceRow}</div>
+        <canvas class="sparkline" width="300" height="42"></canvas>
+        <div class="card-sources">
+          ${p.sources.map((s) => s.error
+            ? `<span class="source-chip error">${escapeHtml(s.store)} ✕</span>`
+            : `<span class="source-chip">${escapeHtml(s.store)} <b>${fmtPrice(s.lastPrice, s.currency)}</b></span>`
+          ).join('')}
+        </div>
+      </div>`;
+  }
 
   card.onclick = () => openDetail(p.id);
   card.querySelector('.card-refresh').onclick = async (e) => {
@@ -796,11 +805,16 @@ function groupByCategory(items, catOf) {
 
 function buildRecRow(r) {
   const e = r.entry;
+  const cached = state.recPrices[e.id];
+  const priceHtml = cached
+    ? (cached.price != null ? fmtPrice(cached.price, cached.currency) : '—')
+    : '<span class="rec-loading">buscando…</span>';
   const row = document.createElement('div');
   row.className = 'catalog-item';
   row.innerHTML = `
     <span class="catalog-item-name">${escapeHtml(e.label)}<span class="rec-reason">${escapeHtml(r.reason)}</span></span>
     ${e.tier ? `<span class="badge badge-tier">${TIER_NAMES[e.tier]}</span>` : ''}
+    <span class="catalog-price rec-price" data-recid="${e.id}">${priceHtml}</span>
     <button class="btn btn-small btn-primary">Seguir</button>`;
   row.querySelector('button').onclick = (ev) => followRec(e, ev.target);
   return row;
@@ -823,6 +837,40 @@ function renderRecs() {
     g.items.sort((a, b) => b.entry.rank - a.entry.rank);
     for (const r of g.items) list.appendChild(buildRecRow(r));
   }
+  fetchRecPrices(recs);   // rellena los precios en segundo plano
+}
+
+// Consulta el precio de cada recomendación (una vez, con caché de 24h) y va
+// actualizando su celda en el panel según llegan.
+let recPricesRunning = false;
+async function fetchRecPrices(recs) {
+  if (recPricesRunning) return;
+  recPricesRunning = true;
+  try {
+    for (const r of recs) {
+      const e = r.entry;
+      const cached = state.recPrices[e.id];
+      if (cached && Date.now() - cached.t < 24 * 3600 * 1000) continue;
+      let url = cached && cached.url;
+      if (!url) {
+        try { const f = await window.api.discover(e.query, ['pccomponentes.com']); if (f && f.length) url = f[0].url; } catch { /* sin ficha */ }
+      }
+      let price = null, currency = 'EUR';
+      if (url) {
+        try { const res = await window.api.fetchPrice(url); if (res.ok) { price = res.price; currency = res.currency || 'EUR'; } } catch { /* sin precio */ }
+      }
+      state.recPrices[e.id] = { price, currency, url: url || null, t: Date.now() };
+      await save();
+      updateRecPriceCell(e.id);
+    }
+  } finally { recPricesRunning = false; }
+}
+
+function updateRecPriceCell(id) {
+  const cell = document.querySelector(`.rec-price[data-recid="${id}"]`);
+  if (!cell) return;
+  const c = state.recPrices[id];
+  cell.textContent = c && c.price != null ? fmtPrice(c.price, c.currency) : '—';
 }
 
 async function followRec(entry, btn) {
@@ -1161,6 +1209,7 @@ window.api.onAutoRefresh(() => refreshAll(true));
 (async function init() {
   state = await window.api.loadData();
   if (!state.products) state = { products: [], lastRefresh: 0 };
+  if (!state.recPrices) state.recPrices = {};
   // Migración: se retira Coolmod (sustituida por Amazon) de datos anteriores.
   for (const p of state.products) {
     if (p.sources) p.sources = p.sources.filter((s) => domainOf(s.url) !== 'coolmod.com' && s.domain !== 'coolmod.com');
