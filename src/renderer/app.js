@@ -1,6 +1,5 @@
 // ---- Estado ----
 const CATEGORIES = [
-  { id: 'all', name: 'Todos', icon: '📦' },
   { id: 'cpu', name: 'Procesadores', icon: '🧠' },
   { id: 'gpu', name: 'Tarjetas gráficas', icon: '🎮' },
   { id: 'ram', name: 'Memoria RAM', icon: '💾' },
@@ -17,7 +16,7 @@ const TIER_NAMES = { entrada: 'Gama entrada', media: 'Gama media', alta: 'Gama a
 const STALE_MS = 12 * 60 * 60 * 1000; // actualizar al abrir si han pasado >12h
 
 let state = { products: [], lastRefresh: 0 };
-let activeCategory = 'all';
+let activeCategory = null;   // se fija a la primera categoría con productos
 let searchTerm = '';
 let sortBy = 'recent';
 const activeFilters = new Set();
@@ -154,7 +153,15 @@ async function save() {
 }
 
 // ---- Renderizado ----
+function ensureActiveCategory() {
+  if (!activeCategory || !state.products.some((p) => p.category === activeCategory)) {
+    const first = CATEGORIES.find((c) => state.products.some((p) => p.category === c.id));
+    activeCategory = first ? first.id : (CATEGORIES[0] && CATEGORIES[0].id);
+  }
+}
+
 function render() {
+  ensureActiveCategory();
   renderNav();
   renderGrid();
   renderStats();
@@ -166,14 +173,12 @@ function renderNav() {
   const nav = $('category-nav');
   nav.innerHTML = '';
   for (const cat of CATEGORIES) {
-    const count = cat.id === 'all'
-      ? state.products.length
-      : state.products.filter((p) => p.category === cat.id).length;
-    if (cat.id !== 'all' && count === 0) continue;
+    const count = state.products.filter((p) => p.category === cat.id).length;
+    if (count === 0) continue;
     const btn = document.createElement('button');
     btn.className = 'cat-item' + (activeCategory === cat.id ? ' active' : '');
     btn.innerHTML = `<span>${cat.icon}</span> ${cat.name} <span class="cat-count">${count}</span>`;
-    btn.onclick = () => { activeCategory = cat.id; render(); };
+    btn.onclick = () => { activeCategory = cat.id; searchTerm = ''; $('search').value = ''; render(); };
     nav.appendChild(btn);
   }
 }
@@ -211,8 +216,13 @@ function sortProducts(list) {
 
 function visibleProducts() {
   const list = state.products.filter((p) => {
-    if (activeCategory !== 'all' && p.category !== activeCategory) return false;
-    if (searchTerm && !p.name.toLowerCase().includes(searchTerm)) return false;
+    // Al buscar se muestran coincidencias de todas las categorías; si no, la
+    // categoría activa.
+    if (searchTerm) {
+      if (!p.name.toLowerCase().includes(searchTerm)) return false;
+    } else if (p.category !== activeCategory) {
+      return false;
+    }
     if (!passesFilters(p)) return false;
     return true;
   });
@@ -235,61 +245,44 @@ function renderGrid() {
     return;
   }
 
-  // En "Todos": tarjetas compactas (solo nombre y precio). En una categoría
-  // concreta: tarjetas completas con imagen.
-  const compact = activeCategory === 'all';
-  for (const p of products) grid.appendChild(buildCard(p, compact));
+  for (const p of products) grid.appendChild(buildCard(p));
 }
 
-// Construye la tarjeta de un producto.
-//   compact = vista "Todos": SOLO nombre y precio (sin imagen, badges ni tiendas).
-function buildCard(p, compact) {
+// Construye la tarjeta completa de un producto (imagen, precio, tiendas, gráfica).
+function buildCard(p) {
   const best = bestSource(p);
   const pct = priceChange(p);
   const cat = CATEGORIES.find((c) => c.id === p.category);
   const hitTarget = p.targetPrice && best && best.lastPrice <= p.targetPrice;
+  const img = productImage(p);
 
   const priceRow = best
     ? `<span class="card-price">${fmtPrice(best.lastPrice, best.currency)}</span>${changeBadge(pct)}`
     : '<span class="card-price no-price">Sin precio — pulsa ⟳</span>';
 
   const card = document.createElement('div');
-  card.className = 'card' + (compact ? ' card-compact' : '');
-
-  if (compact) {
-    card.innerHTML = `
-      <div class="card-body">
-        <div class="card-top">
-          <div class="card-name">${escapeHtml(p.name)}</div>
-          <button class="card-refresh card-refresh-inline" title="Actualizar este producto">⟳</button>
-        </div>
-        <div class="card-price-row">${priceRow}</div>
-      </div>`;
-  } else {
-    const img = productImage(p);
-    card.innerHTML = `
-      <div class="card-media">
-        <div class="card-media-ph">${PLACEHOLDER_SVG}</div>
-        ${img ? `<img class="card-img" loading="lazy" decoding="async" src="${escapeHtml(img)}" alt="" referrerpolicy="no-referrer" onerror="this.remove()" />` : ''}
-        <button class="card-refresh" title="Actualizar este producto">⟳</button>
+  card.className = 'card';
+  card.innerHTML = `
+    <div class="card-media">
+      <div class="card-media-ph">${PLACEHOLDER_SVG}</div>
+      ${img ? `<img class="card-img" loading="lazy" decoding="async" src="${escapeHtml(img)}" alt="" referrerpolicy="no-referrer" onerror="this.remove()" />` : ''}
+      <button class="card-refresh" title="Actualizar este producto">⟳</button>
+    </div>
+    <div class="card-body">
+      <div class="card-name">${escapeHtml(p.name)}</div>
+      <div class="badges">
+        ${p.tier ? `<span class="badge badge-tier">${TIER_NAMES[p.tier] || p.tier}</span>` : ''}
+        ${p.targetPrice ? `<span class="badge ${hitTarget ? 'badge-alert-hit' : 'badge-alert'}">🎯 ${fmtPrice(p.targetPrice, best && best.currency)}</span>` : ''}
       </div>
-      <div class="card-body">
-        <div class="card-name">${escapeHtml(p.name)}</div>
-        <div class="badges">
-          <span class="badge">${cat ? cat.icon + ' ' + cat.name : p.category}</span>
-          ${p.tier ? `<span class="badge badge-tier">${TIER_NAMES[p.tier] || p.tier}</span>` : ''}
-          ${p.targetPrice ? `<span class="badge ${hitTarget ? 'badge-alert-hit' : 'badge-alert'}">🎯 ${fmtPrice(p.targetPrice, best && best.currency)}</span>` : ''}
-        </div>
-        <div class="card-price-row">${priceRow}</div>
-        <canvas class="sparkline" width="300" height="42"></canvas>
-        <div class="card-sources">
-          ${p.sources.map((s) => s.error
-            ? `<span class="source-chip error">${escapeHtml(s.store)} ✕</span>`
-            : `<span class="source-chip">${escapeHtml(s.store)} <b>${fmtPrice(s.lastPrice, s.currency)}</b></span>`
-          ).join('')}
-        </div>
-      </div>`;
-  }
+      <div class="card-price-row">${priceRow}</div>
+      <canvas class="sparkline" width="300" height="42"></canvas>
+      <div class="card-sources">
+        ${p.sources.map((s) => s.error
+          ? `<span class="source-chip error">${escapeHtml(s.store)} ✕</span>`
+          : `<span class="source-chip">${escapeHtml(s.store)} <b>${fmtPrice(s.lastPrice, s.currency)}</b></span>`
+        ).join('')}
+      </div>
+    </div>`;
 
   card.onclick = () => openDetail(p.id);
   card.querySelector('.card-refresh').onclick = async (e) => {
@@ -306,7 +299,7 @@ function buildCard(p, compact) {
     }
     render();                          // reconstruye la tarjeta ya actualizada
   };
-  if (!compact) drawSparkline(card.querySelector('.sparkline'), bestHistory(p));
+  drawSparkline(card.querySelector('.sparkline'), bestHistory(p));
   return card;
 }
 
