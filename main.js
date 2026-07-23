@@ -23,8 +23,8 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1240,
     height: 800,
-    minWidth: 900,
-    minHeight: 600,
+    minWidth: 620,
+    minHeight: 500,
     backgroundColor: '#0f1117',
     autoHideMenuBar: true,
     icon: path.join(__dirname, 'build', 'icon.png'),
