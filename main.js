@@ -192,6 +192,20 @@ app.whenReady().then(() => {
 
   createWindow();
 
+  // Modo desarrollo (sin empaquetar): recarga la ventana automáticamente al
+  // cambiar los archivos de la interfaz, para ver los cambios al instante.
+  if (!app.isPackaged) {
+    try {
+      let reloadTimer = null;
+      fs.watch(path.join(__dirname, 'src', 'renderer'), { recursive: true }, () => {
+        clearTimeout(reloadTimer);
+        reloadTimer = setTimeout(() => {
+          if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.reload();
+        }, 200);
+      });
+    } catch { /* si el sistema no soporta watch recursivo, se ignora */ }
+  }
+
   // Actualización automática diaria mientras la app esté abierta.
   setInterval(() => {
     if (mainWindow && !mainWindow.isDestroyed()) {
