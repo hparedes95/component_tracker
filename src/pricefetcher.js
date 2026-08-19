@@ -1,24 +1,10 @@
-// Obtiene el precio actual de una página de producto de casi cualquier tienda.
-// Estrategia, en orden de fiabilidad:
-//   1. JSON-LD (schema.org Product/Offer) - usado por PcComponentes, Coolmod,
-//      Newegg, MediaMarkt, Amazon (a veces), y la mayoría de tiendas modernas.
-//   2. Metaetiquetas OpenGraph / product (og:price:amount, product:price:amount).
-//   3. Microdatos itemprop="price".
-//   4. Patrones JSON embebidos ("price": 123.45).
-
-const UA =
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
-  '(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
+// Obtiene el precio actual de una página de producto.
+const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
 
 async function fetchPrice(url) {
   const res = await fetch(url, {
-    headers: {
-      'User-Agent': UA,
-      'Accept': 'text/html,application/xhtml+xml',
-      'Accept-Language': 'es-ES,es;q=0.9,en;q=0.8'
-    },
-    redirect: 'follow',
-    signal: AbortSignal.timeout(20000)
+    headers: { 'User-Agent': UA, 'Accept': 'text/html,application/xhtml+xml', 'Accept-Language': 'es-ES,es;q=0.9,en;q=0.8' },
+    redirect: 'follow', signal: AbortSignal.timeout(20000)
   });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const html = await res.text();
@@ -27,7 +13,6 @@ async function fetchPrice(url) {
   return { ...result, image: extractImage(html), name: extractName(html) };
 }
 
-// Extrae la imagen principal del producto (og:image / twitter:image / JSON-LD).
 function extractImage(html) {
   const og = metaContent(html, ['og:image', 'og:image:secure_url', 'twitter:image', 'twitter:image:src']);
   if (og && /^https?:\/\//.test(og)) return og;
@@ -41,12 +26,12 @@ function extractImage(html) {
 }
 
 function extractPrice(html) {
+  // Los datos estructurados tienen prioridad. Los patrones JSON genéricos se
+  // mantienen al final porque pueden coincidir con precios no visibles.
   return fromJsonLd(html) || fromMetaTags(html) || fromItemprop(html) || fromAmazon(html) || fromJsonPatterns(html);
 }
 
-// --- Amazon: el precio de la CAJA DE COMPRA (priceToPay), no el tachado ---
 function fromAmazon(html) {
-  // Primero el precio dentro del contenedor de compra real
   let m = /class="[^"]*(?:priceToPay|apexPriceToPay|reinventPricePriceToPay)[^"]*"[\s\S]{0,260}?class="a-offscreen"\s*>\s*([^<]+?)\s*</i.exec(html);
   if (!m) m = /class="a-offscreen"\s*>\s*([^<]+?)\s*</i.exec(html);
   if (!m) return null;
@@ -54,7 +39,6 @@ function fromAmazon(html) {
   return price ? { price, currency: null } : null;
 }
 
-// Nombre del producto de la página (para verificar que el enlace es el correcto)
 function extractName(html) {
   const og = metaContent(html, ['og:title', 'twitter:title']);
   if (og) return cleanText(og);
@@ -65,28 +49,55 @@ function extractName(html) {
 }
 
 function cleanText(s) {
-  return String(s)
-    .replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&nbsp;/g, ' ')
-    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(+n))
-    .replace(/\s+/g, ' ').trim();
+  return String(s).replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&nbsp;/g, ' ').replace(/&#(\d+);/g, (_, n) => String.fromCharCode(+n)).replace(/\s+/g, ' ').trim();
 }
 
-// --- 1. JSON-LD ---
-// Dos pasadas: primero el precio MOSTRADO (`price`); solo si no hay ninguno se
-// recurre a `lowPrice`. Así se evita coger el precio más barato de otros
-// vendedores/marketplace, que provocaba falsas bajadas.
 function fromJsonLd(html) {
-  return jsonLdPrice(html, 'price') || jsonLdPrice(html, 'lowPrice');
+  return jsonLdPrice(html, 'price') || jsonLdOfferPrice(html);
+}
+
+function parseJsonLdScripts(html) {
+  const re = /<script[^>]*type\s*=\s*["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
+  const out = [];
+  let m;
+  while ((m = re.exec(html)) !== null) {
+    try { out.push(JSON.parse(m[1].trim())); } catch {}
+  }
+  return out;
 }
 
 function jsonLdPrice(html, field) {
-  const re = /<script[^>]*type\s*=\s*["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
-  let m;
-  while ((m = re.exec(html)) !== null) {
-    let data;
-    try { data = JSON.parse(m[1].trim()); } catch { continue; }
+  for (const data of parseJsonLdScripts(html)) {
     const found = searchJsonLd(data, field);
     if (found) return found;
+  }
+  return null;
+}
+
+// lowPrice de AggregateOffer representa el mínimo del conjunto de ofertas y
+// puede pertenecer a otro vendedor. Nunca lo tratamos como precio actual.
+function jsonLdOfferPrice(html) {
+  for (const data of parseJsonLdScripts(html)) {
+    const found = searchSafeOfferPrice(data);
+    if (found) return found;
+  }
+  return null;
+}
+
+function searchSafeOfferPrice(node) {
+  if (node == null || typeof node !== 'object') return null;
+  if (Array.isArray(node)) {
+    for (const item of node) { const found = searchSafeOfferPrice(item); if (found) return found; }
+    return null;
+  }
+  const type = node['@type'];
+  const isAggregate = type === 'AggregateOffer' || (Array.isArray(type) && type.includes('AggregateOffer'));
+  if (!isAggregate && node.price != null) {
+    const price = parseNumber(node.price);
+    if (price) return { price, currency: node.priceCurrency || null };
+  }
+  for (const key of ['offers', '@graph', 'mainEntity', 'itemListElement', 'item', 'hasVariant']) {
+    if (node[key]) { const found = searchSafeOfferPrice(node[key]); if (found) return found; }
   }
   return null;
 }
@@ -94,33 +105,25 @@ function jsonLdPrice(html, field) {
 function searchJsonLd(node, field) {
   if (node == null || typeof node !== 'object') return null;
   if (Array.isArray(node)) {
-    for (const item of node) {
-      const found = searchJsonLd(item, field);
-      if (found) return found;
-    }
+    for (const item of node) { const found = searchJsonLd(item, field); if (found) return found; }
     return null;
   }
-  const raw = node[field];
-  if (raw != null) {
-    const price = parseNumber(raw);
+  // For AggregateOffer, only `price` is accepted. `lowPrice` is intentionally
+  // ignored because it can describe a different seller's offer.
+  const type = node['@type'];
+  const isAggregate = type === 'AggregateOffer' || (Array.isArray(type) && type.includes('AggregateOffer'));
+  if (field === 'price' && node[field] != null && !(isAggregate && field === 'lowPrice')) {
+    const price = parseNumber(node[field]);
     if (price) return { price, currency: node.priceCurrency || null };
   }
   for (const key of ['offers', '@graph', 'mainEntity', 'itemListElement', 'item', 'hasVariant']) {
-    if (node[key]) {
-      const found = searchJsonLd(node[key], field);
-      if (found) return found;
-    }
+    if (node[key]) { const found = searchJsonLd(node[key], field); if (found) return found; }
   }
   return null;
 }
 
-// --- 2. Metaetiquetas ---
 function fromMetaTags(html) {
-  const price = metaContent(html, [
-    'product:price:amount',
-    'og:price:amount',
-    'twitter:data1'
-  ]);
+  const price = metaContent(html, ['product:price:amount', 'og:price:amount', 'twitter:data1']);
   if (!price) return null;
   const parsed = parseNumber(price);
   if (!parsed) return null;
@@ -132,16 +135,13 @@ function metaContent(html, names) {
   for (const name of names) {
     const re = new RegExp(
       `<meta[^>]+(?:property|name)\\s*=\\s*["']${name.replace(/[:]/g, '\\$&')}["'][^>]*content\\s*=\\s*["']([^"']+)["']|` +
-      `<meta[^>]+content\\s*=\\s*["']([^"']+)["'][^>]*(?:property|name)\\s*=\\s*["']${name.replace(/[:]/g, '\\$&')}["']`,
-      'i'
-    );
+      `<meta[^>]+content\\s*=\\s*["']([^"']+)["'][^>]*(?:property|name)\\s*=\\s*["']${name.replace(/[:]/g, '\\$&')}["']`, 'i');
     const m = re.exec(html);
     if (m) return m[1] || m[2];
   }
   return null;
 }
 
-// --- 3. Microdatos ---
 function fromItemprop(html) {
   const re = /itemprop\s*=\s*["']price["'][^>]*content\s*=\s*["']([^"']+)["']|content\s*=\s*["']([^"']+)["'][^>]*itemprop\s*=\s*["']price["']/i;
   const m = re.exec(html);
@@ -150,26 +150,18 @@ function fromItemprop(html) {
   return price ? { price, currency: null } : null;
 }
 
-// --- 4. Patrones JSON embebidos ---
 function fromJsonPatterns(html) {
   const patterns = [
-    /"price"\s*:\s*"?(\d+(?:[.,]\d{1,2})?)"?/i,
-    /"current_price"\s*:\s*"?(\d+(?:[.,]\d{1,2})?)"?/i,
-    /"priceAmount"\s*:\s*"?(\d+(?:[.,]\d{1,2})?)"?/i
+    /(?:"|')current_price(?:"|')\s*:\s*(?:"|')?(\d+(?:[.,]\d{1,2})?)(?:"|')?/i,
+    /(?:"|')priceAmount(?:"|')\s*:\s*(?:"|')?(\d+(?:[.,]\d{1,2})?)(?:"|')?/i
   ];
   for (const re of patterns) {
     const m = re.exec(html);
-    if (m) {
-      const price = parseNumber(m[1]);
-      if (price) return { price, currency: null };
-    }
+    if (m) { const price = parseNumber(m[1]); if (price) return { price, currency: null }; }
   }
   return null;
 }
 
-// Último recurso: busca precios en euros dentro del texto renderizado de la
-// página (cuando no hay datos estructurados). Elige el valor más repetido y,
-// en caso de empate, el mayor — el precio del producto suele destacar.
 function extractPriceFromText(text) {
   if (typeof text !== 'string') return null;
   const values = [];
@@ -179,33 +171,21 @@ function extractPriceFromText(text) {
     const val = parseNumber(m[1] || m[2]);
     if (val && val >= 5 && val <= 20000) values.push(val);
   }
-  if (values.length === 0) return null;
+  if (!values.length) return null;
   const freq = new Map();
   for (const v of values) freq.set(v, (freq.get(v) || 0) + 1);
   let best = values[0], bestF = 0;
-  for (const [v, f] of freq) {
-    if (f > bestF || (f === bestF && v > best)) { best = v; bestF = f; }
-  }
+  for (const [v, f] of freq) if (f > bestF || (f === bestF && v > best)) { best = v; bestF = f; }
+  // A single arbitrary currency-looking number is too dangerous to trust.
+  if (bestF < 2 && values.length > 1) return null;
   return { price: best, currency: 'EUR' };
 }
 
-// Extrae una LISTA de productos de una página de listado/búsqueda de la tienda,
-// usando los datos estructurados schema.org (Product / ItemList). Sirve para el
-// escaneo de mercado: descubrir productos nuevos que el usuario no sigue.
 function extractProducts(html) {
   const out = [];
-  const re = /<script[^>]*type\s*=\s*["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
-  let m;
-  while ((m = re.exec(html)) !== null) {
-    let data;
-    try { data = JSON.parse(m[1].trim()); } catch { continue; }
-    collectProducts(data, out);
-  }
+  for (const data of parseJsonLdScripts(html)) collectProducts(data, out);
   const seen = new Set(), res = [];
-  for (const p of out) {
-    const k = p.url || p.name;
-    if (k && p.name && !seen.has(k)) { seen.add(k); res.push(p); }
-  }
+  for (const p of out) { const k = p.url || p.name; if (k && p.name && !seen.has(k)) { seen.add(k); res.push(p); } }
   return res;
 }
 
@@ -215,8 +195,7 @@ function collectProducts(node, out) {
   const type = node['@type'];
   const isProduct = type === 'Product' || (Array.isArray(type) && type.includes('Product'));
   if (isProduct && node.name) {
-    const image = Array.isArray(node.image) ? node.image[0]
-      : (typeof node.image === 'string' ? node.image : (node.image && node.image.url)) || null;
+    const image = Array.isArray(node.image) ? node.image[0] : (typeof node.image === 'string' ? node.image : (node.image && node.image.url)) || null;
     const url = typeof node.url === 'string' ? node.url : (node.offers && node.offers.url) || null;
     out.push({ name: String(node.name).trim(), price: offerPrice(node.offers), image, url });
   }
@@ -226,25 +205,20 @@ function collectProducts(node, out) {
 function offerPrice(offers) {
   if (!offers) return null;
   if (Array.isArray(offers)) { for (const o of offers) { const p = offerPrice(o); if (p) return p; } return null; }
-  const raw = offers.price ?? offers.lowPrice;
+  const type = offers['@type'];
+  const aggregate = type === 'AggregateOffer' || (Array.isArray(type) && type.includes('AggregateOffer'));
+  const raw = aggregate ? offers.price : offers.price;
   return raw != null ? parseNumber(raw) : null;
 }
 
-// Convierte "1.299,99", "1,299.99", "1299.99" o 1299.99 en un número.
 function parseNumber(value) {
   if (typeof value === 'number') return value > 0 ? value : null;
   if (typeof value !== 'string') return null;
   let s = value.trim().replace(/[^\d.,]/g, '');
   if (!s) return null;
-  const lastComma = s.lastIndexOf(',');
-  const lastDot = s.lastIndexOf('.');
-  if (lastComma > lastDot) {
-    // Formato europeo: 1.299,99
-    s = s.replace(/\./g, '').replace(',', '.');
-  } else {
-    // Formato anglosajón: 1,299.99
-    s = s.replace(/,/g, '');
-  }
+  const lastComma = s.lastIndexOf(','), lastDot = s.lastIndexOf('.');
+  if (lastComma > lastDot) s = s.replace(/\./g, '').replace(',', '.');
+  else s = s.replace(/,/g, '');
   const n = parseFloat(s);
   return Number.isFinite(n) && n > 0 ? n : null;
 }
